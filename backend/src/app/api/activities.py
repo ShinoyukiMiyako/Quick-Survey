@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.core import get_current_user, CurrentUser
 from app.schemas import ApiResponse
 from app.services import ActivityService
 
@@ -17,8 +18,9 @@ async def get_activities(
     offset: int = Query(default=0, ge=0),
     action: Optional[str] = Query(default=None, description="筛选操作类型: submit, approved, rejected"),
     db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
 ):
-    """获取活动日志列表"""
+    """获取活动日志列表 (仅管理员; 日志含玩家名/操作者, 不对匿名公开)"""
     logs, total = await ActivityService.get_recent_activities(
         db, limit=limit, offset=offset, action=action
     )
