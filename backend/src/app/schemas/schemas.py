@@ -44,7 +44,7 @@ class QuestionConditionSchema(BaseModel):
     用于实现分支逻辑：根据某道题的答案决定是否显示当前题目
     例如："是否游玩过BA？" 选"是"则显示BA相关题目
     """
-    depends_on: int  # 依赖的题目索引（按 ID 排序后的位置，从0开始）— 前后端必须一致
+    depends_on: int  # 依赖题的 question_id（稳定引用，不随题序/编辑变化）— 前后端一致
     show_when: str | list[str]  # 触发显示的答案值（支持单值或多值）
 
 

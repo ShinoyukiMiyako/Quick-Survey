@@ -13,6 +13,61 @@ from app.schemas import (
 )
 
 
+def is_question_visible(condition, answer_map: dict, question_map: dict) -> bool:
+    """依据条件逻辑判断题目是否应对用户可见 (纯函数, 便于单测)。
+
+    condition.depends_on 语义: 依赖题的 question_id (稳定引用, 不随题序/编辑变化)。
+    历史上曾按"题目 ID 升序的位置索引"解释, 现统一为 question_id, 与前端及
+    模型注释对齐; 存量数据由迁移脚本一次性重映射。
+
+    show_when 与依赖题答案的比较规则:
+    - single/boolean: 答案存放在 content["value"]
+    - multiple:       答案存放在 content["values"] (list), 命中任一即触发
+    - text:           答案存放在 content["text"]
+    - image:          不参与条件比较
+
+    answer_map:  {question_id: content}
+    question_map: {question_id: question} (仅用于判定依赖题是否存在于本卷)
+    """
+    if not condition:
+        return True
+
+    depends_on = condition.get("depends_on")
+    show_when = condition.get("show_when")
+
+    if depends_on is None or show_when is None:
+        return True
+
+    # 依赖题不存在 (已删 / 随机卷未抽中) 时不因条件隐藏, 交由必填等其它规则处理
+    if depends_on not in question_map:
+        return True
+
+    depend_answer = answer_map.get(depends_on)
+    if not depend_answer:
+        return False  # 依赖的题目没有回答, 条件题不可见
+
+    # 兼容不同题型的答案字段
+    if "value" in depend_answer and depend_answer["value"] not in (None, ""):
+        answer_value = depend_answer["value"]
+    elif "values" in depend_answer and depend_answer["values"]:
+        answer_value = depend_answer["values"]
+    elif "text" in depend_answer and depend_answer["text"]:
+        answer_value = depend_answer["text"]
+    else:
+        return False
+
+    # 标准化 show_when 为集合
+    if isinstance(show_when, list):
+        show_set = {str(v) for v in show_when}
+    else:
+        show_set = {str(show_when)}
+
+    # multiple 题型: answer_value 是列表, 命中任一值即触发
+    if isinstance(answer_value, list):
+        return any(str(v) in show_set for v in answer_value)
+    return str(answer_value) in show_set
+
+
 class SurveyService:
     """问卷服务"""
     

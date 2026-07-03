@@ -5,6 +5,7 @@ from app.db import get_db
 from app.schemas import ApiResponse, SubmissionCreate, PublicSurveyResponse
 from app.services import SurveyService, SubmissionService, FileService, ActivityService
 from app.services import bot_notify
+from app.services.survey import is_question_visible
 from app.services.mod_client import issue_registration_code as mod_issue_registration_code
 from app.core import (
     verify_turnstile,
@@ -164,67 +165,14 @@ async def submit_survey(
     # 构建答案映射，用于检查条件题的依赖
     answer_map = {a.question_id: a.content for a in data.answers}
     question_map = {q.id: q for q in survey.questions}
-    
-    # 预排序一次，供 is_question_visible 重复使用（避免每次调用都重新排序）
-    sorted_questions = sorted(survey.questions, key=lambda q: q.id)
 
-    # 辅助函数：检查条件题是否应该显示
-    def is_question_visible(question) -> bool:
-        """检查题目是否应该对用户可见（基于条件逻辑）
-
-        depends_on 语义: 题目索引（按 ID 排序后的位置，从0开始）。
-        show_when 与依赖题答案的比较规则:
-        - single/boolean: 答案存放在 content["value"]
-        - multiple:       答案存放在 content["values"] (list)，命中任一即触发
-        - text:           答案存放在 content["text"]
-        - image:          不参与条件比较
-        """
-        if not question.condition:
-            return True
-
-        depends_on = question.condition.get("depends_on")
-        show_when = question.condition.get("show_when")
-
-        if depends_on is None or show_when is None:
-            return True
-
-        if depends_on < 0 or depends_on >= len(sorted_questions):
-            return True
-
-        depend_question = sorted_questions[depends_on]
-        depend_answer = answer_map.get(depend_question.id)
-
-        if not depend_answer:
-            return False  # 依赖的题目没有回答，条件题不可见
-
-        # 兼容不同题型的答案字段
-        if "value" in depend_answer and depend_answer["value"] not in (None, ""):
-            answer_value = depend_answer["value"]
-        elif "values" in depend_answer and depend_answer["values"]:
-            answer_value = depend_answer["values"]
-        elif "text" in depend_answer and depend_answer["text"]:
-            answer_value = depend_answer["text"]
-        else:
-            return False
-
-        # 标准化 show_when 为集合
-        if isinstance(show_when, list):
-            show_set = {str(v) for v in show_when}
-        else:
-            show_set = {str(show_when)}
-
-        # multiple 题型：answer_value 是列表，命中任一值即触发
-        if isinstance(answer_value, list):
-            return any(str(v) in show_set for v in answer_value)
-        return str(answer_value) in show_set
-    
     # 检查必填问题（考虑条件题逻辑）
     # 对于随机问卷，前端只收到部分题目，无法在后端验证完整性
     if not survey.is_random:
-        # 只检查可见的必填题
+        # 只检查可见的必填题 (condition.depends_on 语义=依赖题 question_id)
         required_questions = {
-            q.id for q in survey.questions 
-            if q.is_required and is_question_visible(q)
+            q.id for q in survey.questions
+            if q.is_required and is_question_visible(q.condition, answer_map, question_map)
         }
         answered_questions = {a.question_id for a in data.answers}
         missing = required_questions - answered_questions

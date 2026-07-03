@@ -37,16 +37,15 @@ export function SurveyPage() {
   const [startTime] = useState<number>(() => Date.now() / 1000) // 记录开始时间（秒）
 
   // 检查条件题目是否应该显示
-  // depends_on 语义: 题目索引（按 ID 排序后的位置，从0开始）— 与后端 public.py 保持一致
+  // depends_on 语义: 依赖题的 question_id（稳定引用，不随题序/编辑变化）— 与后端 public.py 一致
   // 答案字段兼容: single/boolean → value, multiple → values, text → text
   const isQuestionVisible = useCallback((question: Question, currentAnswers: Map<number, AnswerSubmit['content']>, allQuestions: Question[]): boolean => {
-    if (!question.condition) return true
+    const condition = question.condition
+    if (!condition) return true
 
-    const dependIndex = question.condition.depends_on
-    const sortedQuestions = [...allQuestions].sort((a, b) => a.id - b.id)
-    const dependQuestion = sortedQuestions[dependIndex]
-
-    if (!dependQuestion) return false
+    // 依赖题不存在（已删/随机卷未抽中）时不因条件隐藏, 与后端一致
+    const dependQuestion = allQuestions.find(q => q.id === condition.depends_on)
+    if (!dependQuestion) return true
 
     const dependAnswer = currentAnswers.get(dependQuestion.id)
     if (!dependAnswer) return false
@@ -63,7 +62,7 @@ export function SurveyPage() {
       return false
     }
 
-    const showWhen = question.condition.show_when
+    const showWhen = condition.show_when
     const showSet = new Set(Array.isArray(showWhen) ? showWhen.map(String) : [String(showWhen)])
 
     if (Array.isArray(answerValue)) {

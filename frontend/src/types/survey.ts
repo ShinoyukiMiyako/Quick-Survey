@@ -14,7 +14,7 @@ export interface QuestionValidation {
 // 条件显示规则
 // 用于实现分支逻辑：根据某道题的答案决定是否显示当前题目
 export interface QuestionCondition {
-  depends_on: number           // 依赖的问题 ID
+  depends_on: number           // 依赖题的 question_id（稳定引用，不随题序/编辑变化）
   show_when: string | string[] // 触发显示的答案值（支持单值或多值）
 }
 
