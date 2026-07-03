@@ -6,17 +6,29 @@
 - POST /internal/notifications/{id}/ack  插件回调: 标记已发, 回填 in_review_group
 """
 import secrets
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.models import Submission
 from app.schemas import ApiResponse
 from app.services import SubmissionService
 from app.services import bot_notify
 from app.core.config import get_settings
+
+
+def _iso_utc(dt: Optional[datetime]) -> Optional[str]:
+    """datetime -> UTC ISO 字符串; naive 视为 UTC。供插件按北京时间展示。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
 
 
 async def require_internal_token(
@@ -72,6 +84,7 @@ async def get_notifications(
                     "type": n.type,
                     "reason": n.reason,
                     "submission_id": n.submission_id,
+                    "created_at": _iso_utc(n.created_at),
                 }
                 for n in items
             ]
@@ -88,3 +101,12 @@ async def ack_notification(
     """标记通知已处理; submit 类型带 in_group 时回填 Submission.in_review_group。"""
     acked = await bot_notify.ack(db, notification_id, body.in_group)
     return ApiResponse(success=True, data={"acked": acked})
+
+
+@router.get("/stats", response_model=ApiResponse)
+async def get_stats(db: AsyncSession = Depends(get_db)):
+    """运维状态: 当前待审核问卷数 (供 NapCat 插件 #状态 命令展示)。"""
+    result = await db.execute(
+        select(func.count()).select_from(Submission).where(Submission.status == "pending")
+    )
+    return ApiResponse(success=True, data={"pending_review": int(result.scalar_one())})
