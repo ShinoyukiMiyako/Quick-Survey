@@ -102,16 +102,46 @@ class SurveyCreate(BaseModel):
     description: Optional[str] = None
     is_random: bool = False
     random_count: Optional[int] = Field(None, ge=1)
+    # 门户编排: 栏目(whitelist/collection) 与卡片展示
+    category: str = Field("whitelist", pattern="^(whitelist|collection)$")
+    visibility: str = Field("public", pattern="^(public|unlisted|private)$")
+    cover_url: Optional[str] = Field(None, max_length=512)
+    icon: Optional[str] = Field(None, max_length=64)
+    theme_color: Optional[str] = Field(None, max_length=16)
+    summary: Optional[str] = Field(None, max_length=255)
+    estimated_minutes: Optional[int] = Field(None, ge=1)
     questions: list[QuestionCreate] = []
 
 
 class SurveyUpdate(BaseModel):
-    """更新问卷"""
+    """更新问卷 (exclude_unset: 仅更新显式提供的字段)"""
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     is_active: Optional[bool] = None
     is_random: Optional[bool] = None
     random_count: Optional[int] = Field(None, ge=1)
+    # 门户编排
+    sort_order: Optional[int] = Field(None, ge=0)
+    is_pinned: Optional[bool] = None
+    category: Optional[str] = Field(None, pattern="^(whitelist|collection)$")
+    visibility: Optional[str] = Field(None, pattern="^(public|unlisted|private)$")
+    status: Optional[str] = Field(None, pattern="^(draft|published|archived)$")
+    cover_url: Optional[str] = Field(None, max_length=512)
+    icon: Optional[str] = Field(None, max_length=64)
+    theme_color: Optional[str] = Field(None, max_length=16)
+    summary: Optional[str] = Field(None, max_length=255)
+    estimated_minutes: Optional[int] = Field(None, ge=1)
+
+
+class SurveyReorderItem(BaseModel):
+    """批量重排的单项"""
+    id: int
+    sort_order: int = Field(..., ge=0)
+
+
+class SurveyReorderRequest(BaseModel):
+    """批量重排问卷展示顺序"""
+    orders: list[SurveyReorderItem]
 
 
 class SurveyResponse(BaseModel):

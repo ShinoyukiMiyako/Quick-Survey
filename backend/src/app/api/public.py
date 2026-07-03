@@ -72,6 +72,41 @@ async def get_active_survey(
     )
 
 
+@router.get("/surveys", response_model=ApiResponse)
+async def list_public_surveys(
+    category: str | None = Query(None, description="按栏目过滤: whitelist / collection"),
+    db: AsyncSession = Depends(get_db),
+):
+    """门户可选问卷列表（公开，无需认证）。
+
+    返回 启用+已发布+公开可见 的卷的轻量摘要（不含题目明细、不泄露提交量）,
+    已按 置顶 > 排序位 > 创建时间 排好序。取代旧的'仅取单个激活卷'。
+    """
+    surveys = await SurveyService.list_public_surveys(db, category=category)
+    return ApiResponse(
+        success=True,
+        data={
+            "surveys": [
+                {
+                    "code": s.code,
+                    "title": s.title,
+                    "description": s.description,
+                    "summary": s.summary,
+                    "category": s.category,
+                    "cover_url": s.cover_url,
+                    "icon": s.icon,
+                    "theme_color": s.theme_color,
+                    "estimated_minutes": s.estimated_minutes,
+                    "is_pinned": s.is_pinned,
+                    "sort_order": s.sort_order,
+                    "question_count": len(s.questions),
+                }
+                for s in surveys
+            ]
+        },
+    )
+
+
 @router.get("/surveys/{code}", response_model=ApiResponse)
 async def get_public_survey(
     code: str,

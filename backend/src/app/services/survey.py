@@ -86,6 +86,13 @@ class SurveyService:
             code=code,
             is_random=data.is_random,
             random_count=data.random_count,
+            category=data.category,
+            visibility=data.visibility,
+            cover_url=data.cover_url,
+            icon=data.icon,
+            theme_color=data.theme_color,
+            summary=data.summary,
+            estimated_minutes=data.estimated_minutes,
             created_by=created_by,
         )
         
@@ -149,31 +156,78 @@ class SurveyService:
         size: int = 20,
         search: Optional[str] = None,
         is_active: Optional[bool] = None,
+        category: Optional[str] = None,
     ) -> tuple[list[Survey], int]:
-        """获取问卷列表"""
+        """获取问卷列表 (管理端), 按 置顶 > 排序位 > 创建时间, 与门户展示顺序一致。"""
         query = select(Survey)
         count_query = select(func.count(Survey.id))
-        
+
         if search:
             query = query.where(Survey.title.contains(search))
             count_query = count_query.where(Survey.title.contains(search))
-        
+
         if is_active is not None:
             query = query.where(Survey.is_active == is_active)
             count_query = count_query.where(Survey.is_active == is_active)
-        
+
+        if category is not None:
+            query = query.where(Survey.category == category)
+            count_query = count_query.where(Survey.category == category)
+
         # 获取总数
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
-        
-        # 分页
-        query = query.order_by(Survey.created_at.desc())
+
+        # 分页 (置顶优先, 再按排序位, 最后按创建时间)
+        query = query.order_by(
+            Survey.is_pinned.desc(), Survey.sort_order.asc(), Survey.created_at.desc()
+        )
         query = query.offset((page - 1) * size).limit(size)
-        
+
         result = await db.execute(query)
         surveys = result.scalars().all()
-        
+
         return list(surveys), total
+
+    @staticmethod
+    async def list_public_surveys(
+        db: AsyncSession, category: Optional[str] = None
+    ) -> list[Survey]:
+        """门户可选问卷列表: 启用 + 已发布 + 公开可见, 按 置顶 > 排序位 > 创建时间。
+
+        取代'仅取最新一个激活卷'的单卷假设, 支撑多表单入口。
+        """
+        query = (
+            select(Survey)
+            .options(selectinload(Survey.questions))
+            .where(
+                Survey.is_active == True,
+                Survey.status == "published",
+                Survey.visibility == "public",
+            )
+        )
+        if category is not None:
+            query = query.where(Survey.category == category)
+        query = query.order_by(
+            Survey.is_pinned.desc(), Survey.sort_order.asc(), Survey.created_at.desc()
+        )
+        result = await db.execute(query)
+        return list(result.scalars().all())
+
+    @staticmethod
+    async def reorder_surveys(db: AsyncSession, orders: list) -> int:
+        """批量更新展示排序位 (orders: [SurveyReorderItem(id, sort_order)])。返回更新条数。"""
+        updated = 0
+        for item in orders:
+            result = await db.execute(select(Survey).where(Survey.id == item.id))
+            survey = result.scalar_one_or_none()
+            if survey is None:
+                continue
+            survey.sort_order = item.sort_order
+            updated += 1
+        if updated:
+            await db.commit()
+        return updated
     
     @staticmethod
     async def get_survey_stats(db: AsyncSession) -> dict:

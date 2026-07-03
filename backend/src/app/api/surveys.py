@@ -9,6 +9,7 @@ from app.schemas import (
     ApiResponse,
     SurveyCreate,
     SurveyUpdate,
+    SurveyReorderRequest,
     SurveyResponse,
     SurveyDetailResponse,
     QuestionCreate,
@@ -58,12 +59,13 @@ async def get_surveys(
     size: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
     is_active: Optional[bool] = None,
+    category: Optional[str] = Query(None, description="按栏目过滤: whitelist / collection"),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """获取问卷列表"""
-    surveys, total = await SurveyService.get_surveys(db, page, size, search, is_active)
-    
+    """获取问卷列表 (按 置顶 > 排序位 > 创建时间)"""
+    surveys, total = await SurveyService.get_surveys(db, page, size, search, is_active, category)
+
     items = []
     for survey in surveys:
         question_count = await SurveyService.get_question_count(db, survey.id)
@@ -76,12 +78,22 @@ async def get_surveys(
             "is_active": survey.is_active,
             "is_random": survey.is_random,
             "random_count": survey.random_count,
+            "sort_order": survey.sort_order,
+            "is_pinned": survey.is_pinned,
+            "category": survey.category,
+            "visibility": survey.visibility,
+            "status": survey.status,
+            "cover_url": survey.cover_url,
+            "icon": survey.icon,
+            "theme_color": survey.theme_color,
+            "summary": survey.summary,
+            "estimated_minutes": survey.estimated_minutes,
             "question_count": question_count,
             "submission_count": submission_count,
             "created_at": survey.created_at.isoformat(),
             "updated_at": survey.updated_at.isoformat(),
         })
-    
+
     return ApiResponse(
         success=True,
         data={
@@ -91,6 +103,23 @@ async def get_surveys(
             "total": total,
             "pages": (total + size - 1) // size,
         }
+    )
+
+
+@router.patch("/reorder", response_model=ApiResponse)
+async def reorder_surveys(
+    data: SurveyReorderRequest,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """批量重排问卷展示顺序 (拖拽排序落库)。
+
+    注意: 本路由必须声明在 /{survey_id} 之前, 否则 'reorder' 会被当作 survey_id 解析。
+    """
+    updated = await SurveyService.reorder_surveys(db, data.orders)
+    return ApiResponse(
+        success=True,
+        data={"updated": updated},
     )
 
 
@@ -117,6 +146,16 @@ async def get_survey(
             "is_active": survey.is_active,
             "is_random": survey.is_random,
             "random_count": survey.random_count,
+            "sort_order": survey.sort_order,
+            "is_pinned": survey.is_pinned,
+            "category": survey.category,
+            "visibility": survey.visibility,
+            "status": survey.status,
+            "cover_url": survey.cover_url,
+            "icon": survey.icon,
+            "theme_color": survey.theme_color,
+            "summary": survey.summary,
+            "estimated_minutes": survey.estimated_minutes,
             "questions": [
                 {
                     "id": q.id,

@@ -26,7 +26,24 @@ class Survey(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否启用
     is_random: Mapped[bool] = mapped_column(Boolean, default=False)  # 是否随机题目
     random_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 随机抽取题目数量
-    
+
+    # 门户编排 (多表单入口: 可选 + 可排序 + 分栏)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)  # 展示排序位 (升序)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)  # 置顶 (置顶组优先, 组内再按 sort_order)
+    # 栏目/场景: whitelist=MC白名单卷, collection=其它收集表; 面板据此分栏, 也是场景解耦锚点
+    category: Mapped[str] = mapped_column(String(32), default="whitelist")
+    # 可见性: public=进门户列表, unlisted=仅凭链接可填, private=仅管理端预览
+    visibility: Mapped[str] = mapped_column(String(16), default="public")
+    # 生命周期: draft=草稿, published=已发布, archived=已归档; 与 is_active 并存, 门户只列 published
+    status: Mapped[str] = mapped_column(String(16), default="published")
+
+    # 门户卡片展示 (可选, 运营配置)
+    cover_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # 封面图 URL
+    icon: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # 图标 (emoji 或图标名)
+    theme_color: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)  # 主题色
+    summary: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # 卡片简介 (短于 description)
+    estimated_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 预计耗时(分钟)
+
     # 时间戳
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
