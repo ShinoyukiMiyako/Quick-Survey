@@ -2,6 +2,7 @@ import axios, { AxiosError } from 'axios'
 import type {
   ApiResponse,
   PublicSurvey,
+  SurveyListItem,
   SubmissionCreate,
   SecurityConfig,
   UploadResponse,
@@ -54,6 +55,18 @@ export async function getActiveSurvey(): Promise<PublicSurvey> {
     return unwrap(data, '当前没有可用的问卷')
   } catch (err) {
     throw toError(err, '当前没有可用的问卷')
+  }
+}
+
+// 门户可选问卷列表 (轻量摘要, 已按 置顶 > 排序位 > 时间 排好序)
+export async function listSurveys(category?: string): Promise<SurveyListItem[]> {
+  try {
+    const { data } = await http.get<ApiResponse<{ surveys: SurveyListItem[] }>>('/public/surveys', {
+      params: category ? { category } : undefined,
+    })
+    return unwrap(data, '加载问卷列表失败').surveys
+  } catch (err) {
+    throw toError(err, '加载问卷列表失败')
   }
 }
 

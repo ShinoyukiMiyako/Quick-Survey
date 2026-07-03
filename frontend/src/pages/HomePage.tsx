@@ -1,193 +1,181 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { FileText, ArrowRight, Loader2, AlertCircle, Search } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getActiveSurvey } from '@/lib/api'
-import { toast } from 'sonner'
+import { FileText, ArrowRight, AlertCircle, Search, Clock, ListChecks, Pin } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { listSurveys } from '@/lib/api'
+import type { SurveyListItem } from '@/types/survey'
 import { QueryDialog } from '@/components/survey/QueryDialog'
 
 export function HomePage() {
-  const [loading, setLoading] = useState(false)
-  const [checking, setChecking] = useState(true)
-  const [surveyInfo, setSurveyInfo] = useState<{ code: string; title: string } | null>(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [surveys, setSurveys] = useState<SurveyListItem[]>([])
+  const [keyword, setKeyword] = useState('')
   const [queryOpen, setQueryOpen] = useState(false)
   const navigate = useNavigate()
 
-  // 检查是否有可用问卷
   useEffect(() => {
-    const checkActiveSurvey = async () => {
+    let alive = true
+    const load = async () => {
       try {
-        setChecking(true)
-        const data = await getActiveSurvey()
-        setSurveyInfo({ code: data.code, title: data.title })
+        setLoading(true)
+        const list = await listSurveys()
+        if (!alive) return
+        setSurveys(list)
         setError(null)
-      } catch {
-        setError('当前没有可用的问卷')
-        setSurveyInfo(null)
+      } catch (err) {
+        if (!alive) return
+        setError(err instanceof Error ? err.message : '加载问卷列表失败')
       } finally {
-        setChecking(false)
+        if (alive) setLoading(false)
       }
     }
-    checkActiveSurvey()
+    load()
+    return () => {
+      alive = false
+    }
   }, [])
 
-  const handleEnterSurvey = async () => {
-    if (!surveyInfo) {
-      toast.error('当前没有可用的问卷')
-      return
-    }
-
-    setLoading(true)
-    try {
-      navigate(`/survey/${surveyInfo.code}`)
-    } catch {
-      toast.error('进入问卷失败')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // 卷数通常不多, 直接前端过滤标题/简介
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase()
+    if (!kw) return surveys
+    return surveys.filter(
+      (s) =>
+        s.title.toLowerCase().includes(kw) ||
+        (s.description ?? '').toLowerCase().includes(kw) ||
+        (s.summary ?? '').toLowerCase().includes(kw)
+    )
+  }, [surveys, keyword])
 
   return (
-    <div className="flex-1 flex items-center justify-center">
+    <div className="flex-1 w-full max-w-5xl mx-auto px-4 py-10">
+      {/* 头部 + 搜索 + 查询进度入口 */}
       <motion.div
-        initial={{ opacity: 0, y: 40, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ 
-          duration: 0.6, 
-          ease: [0.25, 0.46, 0.45, 0.94],
-          delay: 0.1 
-        }}
-        className="w-full max-w-md"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="mb-8 space-y-4"
       >
-        <Card className="rounded-3xl border-border/50 shadow-xl bg-card/80 backdrop-blur-sm overflow-hidden">
-          {/* 装饰性渐变背景 */}
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/10 pointer-events-none" />
-          
-          <CardHeader className="relative text-center pb-2 pt-8">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ 
-                type: 'spring', 
-                damping: 15, 
-                stiffness: 200,
-                delay: 0.3 
-              }}
-              className="mx-auto mb-4 w-16 h-16 rounded-3xl bg-primary/10 flex items-center justify-center"
-            >
-              <FileText className="w-8 h-8 text-primary" />
-            </motion.div>
-            
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4, duration: 0.4 }}
-            >
-              <CardTitle className="text-2xl font-bold">开始填写问卷</CardTitle>
-              <CardDescription className="mt-2 text-base">
-                {checking ? '正在检查问卷...' : surveyInfo ? surveyInfo.title : '暂无可用问卷'}
-              </CardDescription>
-            </motion.div>
-          </CardHeader>
-
-          <CardContent className="relative pt-4 pb-8 px-8">
-            <div className="space-y-6">
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5, duration: 0.4 }}
-              >
-                {checking ? (
-                  <div className="h-14 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                  </div>
-                ) : error ? (
-                  <div className="h-14 flex items-center justify-center gap-2 text-muted-foreground">
-                    <AlertCircle className="w-5 h-5" />
-                    <span>{error}</span>
-                  </div>
-                ) : (
-                  <div className="h-14 flex items-center justify-center text-muted-foreground">
-                    <span>点击下方按钮开始填写</span>
-                  </div>
-                )}
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6, duration: 0.4 }}
-              >
-                <Button
-                  type="button"
-                  size="lg"
-                  className="w-full h-14 text-lg font-medium rounded-2xl transition-all duration-300"
-                  disabled={loading || checking || !surveyInfo}
-                  onClick={handleEnterSurvey}
-                >
-                  <AnimatePresence mode="wait">
-                    {loading || checking ? (
-                      <motion.div
-                        key="loading"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        className="flex items-center gap-2"
-                      >
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>{checking ? '检查中...' : '加载中...'}</span>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="submit"
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.8 }}
-                        className="flex items-center gap-2"
-                      >
-                        <span>进入问卷</span>
-                        <ArrowRight className="w-5 h-5" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </Button>
-              </motion.div>
-
-              {/* 查询进度入口 */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.7, duration: 0.4 }}
-                className="text-center"
-              >
-                <button
-                  type="button"
-                  onClick={() => setQueryOpen(true)}
-                  className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-primary transition-colors"
-                >
-                  <Search className="w-4 h-4" />
-                  <span>查询审核进度</span>
-                </button>
-              </motion.div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* 底部装饰 */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8, duration: 0.4 }}
-          className="text-center text-sm text-muted-foreground mt-6"
-        >
-          问卷由管理员配置
-        </motion.p>
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-bold tracking-tight">选择一份问卷开始填写</h1>
+          <p className="text-muted-foreground text-sm">点击卡片进入对应问卷；填写后可凭凭据查询审核进度。</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜索问卷标题 / 简介"
+              className="pl-9"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setQueryOpen(true)}
+            className="inline-flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-primary"
+          >
+            <Search className="w-4 h-4" />
+            <span>查询审核进度</span>
+          </button>
+        </div>
       </motion.div>
 
-      {/* 查询模态框 */}
+      {/* 加载骨架 / 错误 / 空 / 列表 */}
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i} className="rounded-2xl overflow-hidden">
+              <CardContent className="p-5 space-y-3">
+                <Skeleton className="h-10 w-10 rounded-xl" />
+                <Skeleton className="h-5 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-2/3" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-muted-foreground">
+          <AlertCircle className="w-8 h-8" />
+          <p>{error}</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-20 text-muted-foreground">
+          <FileText className="w-8 h-8" />
+          <p>{keyword ? '没有匹配的问卷' : '暂无可用问卷'}</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((s, i) => (
+            <motion.button
+              key={s.code}
+              type="button"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: Math.min(i * 0.05, 0.3) }}
+              onClick={() => navigate(`/survey/${s.code}`)}
+              className="group text-left"
+            >
+              <Card className="h-full overflow-hidden rounded-2xl border-border/60 transition-all group-hover:border-primary/50 group-hover:shadow-md">
+                {s.cover_url ? (
+                  <div className="h-28 w-full overflow-hidden bg-muted">
+                    <img src={s.cover_url} alt="" className="h-full w-full object-cover" />
+                  </div>
+                ) : null}
+                <CardContent className="space-y-3 p-5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div
+                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg"
+                      style={
+                        s.theme_color
+                          ? { backgroundColor: `${s.theme_color}1a`, color: s.theme_color }
+                          : undefined
+                      }
+                    >
+                      {s.icon ? (
+                        <span>{s.icon}</span>
+                      ) : (
+                        <FileText className={s.theme_color ? 'h-5 w-5' : 'h-5 w-5 text-primary'} />
+                      )}
+                    </div>
+                    {s.is_pinned ? (
+                      <Badge variant="secondary" className="gap-1">
+                        <Pin className="h-3 w-3" />
+                        置顶
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1">
+                    <h3 className="font-semibold leading-snug line-clamp-2">{s.title}</h3>
+                    {s.summary || s.description ? (
+                      <p className="line-clamp-2 text-sm text-muted-foreground">{s.summary || s.description}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex items-center gap-3 pt-1 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <ListChecks className="h-3.5 w-3.5" />
+                      {s.question_count} 题
+                    </span>
+                    {s.estimated_minutes ? (
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />约 {s.estimated_minutes} 分钟
+                      </span>
+                    ) : null}
+                    <ArrowRight className="ml-auto h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.button>
+          ))}
+        </div>
+      )}
+
       <QueryDialog open={queryOpen} onOpenChange={setQueryOpen} />
     </div>
   )

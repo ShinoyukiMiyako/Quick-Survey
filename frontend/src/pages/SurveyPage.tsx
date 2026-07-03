@@ -265,7 +265,7 @@ export function SurveyPage() {
           <p className="text-muted-foreground mb-6">{error}</p>
           <Button onClick={() => navigate('/')} variant="outline" className="rounded-2xl">
             <ArrowLeft className="w-4 h-4 mr-2" />
-            返回首页
+            返回列表
           </Button>
         </motion.div>
       </div>
@@ -352,7 +352,7 @@ export function SurveyPage() {
               size="lg"
               className="rounded-2xl h-12 px-8"
             >
-              返回首页
+              返回列表
             </Button>
           </motion.div>
         </motion.div>

@@ -42,6 +42,22 @@ export interface PublicSurvey {
   questions: Question[]
 }
 
+// 门户入口列表项 (轻量, 不含 questions; 可空字段随后端 JSON 为 null)
+export interface SurveyListItem {
+  code: string
+  title: string
+  description: string | null
+  summary: string | null
+  category: string
+  cover_url: string | null
+  icon: string | null
+  theme_color: string | null
+  estimated_minutes: number | null
+  is_pinned: boolean
+  sort_order: number
+  question_count: number
+}
+
 // 答案提交
 export interface AnswerSubmit {
   question_id: number
