@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Loader2, User, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -14,14 +13,13 @@ import {
 } from '@/components/ui/dialog'
 import { Turnstile } from '@/components/survey/Turnstile'
 
+// 玩家名不再在此收集: 由问卷里绑定字段为「玩家名」的题目提供, 后端提交时从答案抽取。
+// 保留两处收集入口会让二者打架 (曾出现弹窗填 1234、题目填 Shinoyuki, 加白加错人)。
 interface ConfirmDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  playerName: string
-  onPlayerNameChange: (name: string) => void
   onSubmit: () => void
   submitting: boolean
-  requireNameInput?: boolean  // false: 玩家名由问卷题目收集, 隐藏此输入框 (退役旧硬编码)
   // Turnstile 相关
   turnstileEnabled?: boolean
   turnstileSiteKey?: string
@@ -32,11 +30,8 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({
   open,
   onOpenChange,
-  playerName,
-  onPlayerNameChange,
   onSubmit,
   submitting,
-  requireNameInput = true,
   turnstileEnabled = false,
   turnstileSiteKey,
   turnstileVerified = false,
@@ -52,7 +47,7 @@ export function ConfirmDialog({
     }
   }, [turnstileVerified, turnstileEnabled])
 
-  const canSubmit = (!requireNameInput || playerName.trim()) && (!turnstileEnabled || turnstileVerified)
+  const canSubmit = !turnstileEnabled || turnstileVerified
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -73,7 +68,7 @@ export function ConfirmDialog({
             </motion.div>
             <DialogTitle className="text-xl">确认提交</DialogTitle>
             <DialogDescription>
-              {requireNameInput ? '请输入您的游戏名称以完成提交' : '请确认无误后提交，等待管理员审核'}
+              请确认无误后提交，等待管理员审核
             </DialogDescription>
           </DialogHeader>
 
@@ -83,20 +78,6 @@ export function ConfirmDialog({
             transition={{ delay: 0.2 }}
             className="space-y-4 py-4"
           >
-            {requireNameInput && (
-              <div className="space-y-2">
-                <Label htmlFor="player-name">游戏名称</Label>
-                <Input
-                  id="player-name"
-                  placeholder="请输入您的游戏名称"
-                  value={playerName}
-                  onChange={(e) => onPlayerNameChange(e.target.value)}
-                  className="h-12 rounded-xl text-base"
-                  disabled={submitting}
-                />
-              </div>
-            )}
-
             {/* Turnstile 验证 */}
             {turnstileEnabled && turnstileSiteKey && (
               <motion.div

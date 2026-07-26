@@ -24,7 +24,6 @@ export function SurveyPage() {
   const [error, setError] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [answers, setAnswers] = useState<Map<number, AnswerSubmit['content']>>(new Map())
-  const [playerName, setPlayerName] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -76,12 +75,6 @@ export function SurveyPage() {
     if (!survey) return []
     return survey.questions.filter(question => isQuestionVisible(question, answers, survey.questions))
   }, [survey, answers, isQuestionVisible])
-
-  // 是否有标记为玩家名的题: 有则玩家名从该题抽取, 末尾弹窗不再单独收 (退役旧的硬编码输入框)
-  const hasPlayerNameQuestion = useMemo(
-    () => (survey?.questions ?? []).some(q => q.role === 'player_name'),
-    [survey]
-  )
 
   useEffect(() => {
     const fetchData = async () => {
@@ -173,11 +166,6 @@ export function SurveyPage() {
   const handleSubmit = async () => {
     if (!code || !survey) return
 
-    if (!hasPlayerNameQuestion && !playerName.trim()) {
-      toast.error('请输入您的游戏名称')
-      return
-    }
-
     // 检查 Turnstile 验证（如果启用）
     if (securityConfig?.turnstile_enabled && !turnstileToken) {
       toast.error('请完成安全验证')
@@ -190,8 +178,7 @@ export function SurveyPage() {
       const visibleQuestionIds = new Set(visibleQuestions.map(q => q.id))
       
       const submitData = {
-        // 配了玩家名题则后端从答案抽取, 不传顶层; 否则兼容旧流程传输入框值
-        player_name: hasPlayerNameQuestion ? undefined : playerName.trim(),
+        // 玩家名不再由前端提供: 后端从绑定字段为「玩家名」的题目答案里抽取
         answers: Array.from(answers.entries())
           .filter(([questionId]) => visibleQuestionIds.has(questionId))
           .map(([questionId, content]) => ({
@@ -474,11 +461,8 @@ export function SurveyPage() {
       <ConfirmDialog
         open={showConfirm}
         onOpenChange={setShowConfirm}
-        playerName={playerName}
-        onPlayerNameChange={setPlayerName}
         onSubmit={handleSubmit}
         submitting={submitting}
-        requireNameInput={!hasPlayerNameQuestion}
         turnstileEnabled={securityConfig?.turnstile_enabled}
         turnstileSiteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
         turnstileVerified={!!turnstileToken}
