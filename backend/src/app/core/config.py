@@ -53,6 +53,13 @@ class TurnstileSettings(BaseSettings):
     """Cloudflare Turnstile 配置"""
     enabled: bool = False
     secret_key: str = ""
+    # siteverify 端点。本机(阿里云广州)出口到 challenges.cloudflare.com 的 TLS 握手会被
+    # 中途阻断(ServerHello 后卡死), 实测失败率 85%; 故指向深圳面板机的 nginx 中转。
+    # 线路恢复后把本项改回 https://challenges.cloudflare.com/turnstile/v0/siteverify 即可直连。
+    verify_url: str = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    # siteverify 网络层不可达/中转异常时是否放行。Turnstile 只是第一道闸, 后面还压着
+    # IP 限流、提交耗时检测与人工审核; 真人被挡的代价高于漏放少量机器人, 故默认降级放行。
+    fail_open: bool = True
 
 
 class RateLimitSettings(BaseSettings):

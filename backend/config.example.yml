@@ -56,6 +56,13 @@ security:
     enabled: false
     # Turnstile Secret Key (从 Cloudflare Dashboard 获取)
     secret_key: ""
+    # siteverify 端点。部分国内机房 (实测阿里云广州) 到 challenges.cloudflare.com 的
+    # TLS 握手会被中途阻断, 此时填一台线路通畅的机器上的 nginx 中转地址;
+    # 线路正常的机房保持默认直连即可。
+    verify_url: "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+    # siteverify 不可达时是否放行提交。关掉则网络一断所有人都提交不了;
+    # 打开则降级放行并记 WARNING 日志, 由 IP 限流/耗时检测/人工审核兜底。
+    fail_open: true
   
   # IP 提交限制
   rate_limit:

@@ -182,6 +182,34 @@ cors:
 
 ---
 
+## Turnstile siteverify 中转
+
+问卷后端所在的阿里云广州机房到 `challenges.cloudflare.com` 的 TLS 握手会被中途阻断
+(2026-07-19 起出现, 07-26 实测失败率 85%), 导致真人用户提交被 500 拒绝。
+同账号的深圳机到同一端点完全通畅, 故由其转发。
+
+部署方式见 `deploy/nginx-turnstile-relay.conf` 文件头注释, 要点:
+
+1. 把该文件里的 `location` 块粘进**中转机**上一个已有 HTTPS 站点的 server 块
+   (当前挂在 `panel.mcwok.cn` 的 443 下), `nginx -t` 通过后 `systemctl reload nginx`
+2. 问卷后端 `config.yml` 设 `security.turnstile.verify_url` 指向该地址
+3. 中转对来源 IP 做了 `allow` 白名单, 换问卷机公网 IP 时必须同步改
+
+相关配置项 (`config.yml` 的 `security.turnstile`):
+
+| 配置项 | 说明 |
+|---|---|
+| `verify_url` | siteverify 端点。线路通畅的机房保持 Cloudflare 官方地址直连即可 |
+| `fail_open` | siteverify 不可达时是否放行。关掉则网络一断全员提交失败; 打开则降级放行并记 WARNING, 由 IP 限流/耗时检测/人工审核兜底 |
+
+统计降级放行次数:
+
+```bash
+journalctl -u quick-survey --since "7 days ago" | grep -c "降级放行"
+```
+
+---
+
 ## 🔒 安全建议
 
 1. **防火墙**: 只开放 80/443 端口，后端 8000 端口只允许本地访问

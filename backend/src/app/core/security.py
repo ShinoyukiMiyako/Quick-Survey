@@ -2,12 +2,31 @@
 安全模块 - 处理 Turnstile 验证、提交时间检测
 IP 限流已移至 rate_limit.py 模块
 """
+import logging
 import time
 from typing import Optional
 import httpx
 from fastapi import HTTPException
 
 from app.core.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def _degrade_or_reject(reason: str) -> bool:
+    """
+    siteverify 不可用时的降级决策。
+
+    fail_open 打开时放行并留 WARNING 痕迹 (可据此统计降级次数), 否则拒绝提交。
+    """
+    settings = get_settings()
+
+    if settings.security.turnstile.fail_open or settings.server.debug:
+        logger.warning(f"[Turnstile] 降级放行, 本次提交未经人机校验 (原因: {reason})")
+        return True
+
+    logger.error(f"[Turnstile] 拒绝提交 (原因: {reason})")
+    raise HTTPException(status_code=500, detail="安全验证服务暂时不可用")
 
 
 async def verify_turnstile(token: str, ip: Optional[str] = None) -> bool:
@@ -34,15 +53,14 @@ async def verify_turnstile(token: str, ip: Optional[str] = None) -> bool:
         # 未配置密钥，跳过验证（开发环境）
         return True
     
-    import logging
-    logger = logging.getLogger(__name__)
-    
+    verify_url = settings.security.turnstile.verify_url
+
     try:
         logger.info(f"[Turnstile] 开始验证, IP: {ip}, token长度: {len(token) if token else 0}")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                verify_url,
                 data={
                     "secret": secret_key,
                     "response": token,
@@ -50,8 +68,18 @@ async def verify_turnstile(token: str, ip: Optional[str] = None) -> bool:
                 },
                 timeout=10.0,
             )
-            result = response.json()
-            
+
+            # 以"能否解析出 JSON"而非状态码区分业务响应与中转故障:
+            # Cloudflare 对格式错误的 secret 会返回 400 + 合法 JSON (属业务响应, 要照常报错),
+            # 而中转 nginx 故障 (403/502) 返回的是 HTML 错误页, 只能走降级。
+            try:
+                result = response.json()
+            except ValueError:
+                return _degrade_or_reject(
+                    f"siteverify 响应非 JSON (HTTP {response.status_code}), 端点 {verify_url}, "
+                    f"响应前200字符: {response.text[:200]}"
+                )
+
             logger.info(f"[Turnstile] 验证结果: {result}")
             
             if not result.get("success"):
@@ -84,11 +112,10 @@ async def verify_turnstile(token: str, ip: Optional[str] = None) -> bool:
             return True
             
     except httpx.RequestError as e:
-        logger.error(f"[Turnstile] 网络错误: {e}")
-        # 网络错误时，根据配置决定是否放行
-        if settings.server.debug:
-            return True
-        raise HTTPException(status_code=500, detail="安全验证服务暂时不可用")
+        # ConnectTimeout 一类异常的 str() 为空 (线上日志曾出现"网络错误:"后无内容),
+        # 补类型名才能区分是连不上、握手超时还是读超时。
+        logger.error(f"[Turnstile] 网络错误: {type(e).__name__}: {e}")
+        return _degrade_or_reject(f"网络错误 {type(e).__name__}: {e}")
 
 
 def check_submit_time(start_time: Optional[float]) -> float:
