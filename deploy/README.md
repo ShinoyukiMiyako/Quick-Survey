@@ -158,6 +158,58 @@ sudo systemctl start quick-survey
 sudo cp -r /path/to/dist/* /var/www/quick-survey/
 ```
 
+### 数据库迁移 (更新后端时必做)
+
+`init_db()` 只做 `create_all`, 它建缺失的表, **不会给已有表加列**。所以凡是本次更新带了
+`src/app/migrations/` 下的新编号 SQL, 就必须在重启服务前手动执行一次; 漏跑的表现是服务
+"启动成功"但所有涉及该表的接口全部 500 (SQLAlchemy 查询里带了库里不存在的列)。
+
+顺序固定为: 先快照, 再迁移, 最后重启。
+
+```bash
+cd /opt/quick-survey/backend
+
+# 1) 一致性快照。直接 cp survey.db 会漏掉 WAL 里尚未 checkpoint 的数据,
+#    必须走 sqlite3 的 backup API 才能拿到完整快照
+.venv/bin/python - <<'PY'
+import sqlite3
+src = sqlite3.connect("data/survey.db")
+dst = sqlite3.connect("data/survey.db.snapshot")
+src.backup(dst)
+dst.close(); src.close()
+PY
+
+# 2) 幂等执行迁移。SQLite 不支持 ADD COLUMN IF NOT EXISTS,
+#    故先查 PRAGMA table_info 判断该迁移是否已应用
+.venv/bin/python - <<'PY'
+import sqlite3
+db = sqlite3.connect("data/survey.db")
+cols = [r[1] for r in db.execute("PRAGMA table_info(surveys)")]
+if "starts_at" not in cols:          # 换成本次迁移新增的任一列名
+    db.executescript(open("src/app/migrations/015_add_survey_lifecycle_access.sql").read())
+    db.commit()
+    print("migration applied")
+else:
+    print("migration skipped (already applied)")
+db.close()
+PY
+
+# 3) 重启并冒烟
+systemctl restart quick-survey
+curl -s -o /dev/null -w "%{http_code}\n" localhost:8000/api/v1/public/surveys
+```
+
+已有迁移与其判别列:
+
+| 迁移 | 判别列 (存在即已应用) |
+|---|---|
+| `013_add_survey_portal_fields.sql` | `surveys.sort_order` |
+| `014_add_survey_actions.sql` | `surveys.review_required` |
+| `015_add_survey_lifecycle_access.sql` | `surveys.starts_at` |
+
+`migrate_condition_depends_on_to_id.py` 与 `migrate_player_name_nullable.py` 是一次性数据
+订正脚本, 自带 `--apply` 开关与幂等判断, 只在首次升级到对应版本时跑。
+
 ---
 
 ## ⚙️ 配置说明

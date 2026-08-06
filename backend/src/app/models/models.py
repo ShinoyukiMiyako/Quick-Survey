@@ -50,6 +50,24 @@ class Survey(Base):
     action_add_whitelist: Mapped[bool] = mapped_column(Boolean, default=True)  # 通过时加 MC 白名单
     action_issue_code: Mapped[bool] = mapped_column(Boolean, default=True)  # 允许通过后领取注册码
     action_notify_group: Mapped[bool] = mapped_column(Boolean, default=True)  # 提交/审核入审核群通知队列
+    action_webhook: Mapped[bool] = mapped_column(Boolean, default=False)  # 提交后推送 webhook (best-effort, 失败不影响提交)
+    webhook_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # webhook 目标地址
+
+    # 开放窗口与配额 (NULL 一律表示"不限"; 是否可填由 compute_availability 统一裁决)
+    starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 开放开始时间 (naive UTC, 早于此刻不可填)
+    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 截止时间 (到点停止收集)
+    max_submissions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 总提交上限, NULL=不限
+    max_submissions_per_ip: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 每 IP 提交上限, 防同一人刷量; NULL=不限
+
+    # 访问控制与合规声明
+    # 只存 pbkdf2 派生串, 明文口令不落库也绝不回传任何端; NULL=无口令, 凭链接即可填
+    access_password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    require_consent: Mapped[bool] = mapped_column(Boolean, default=False)  # 填写前需勾选同意声明 (采集个人信息的卷用)
+    privacy_notice: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 同意声明正文
+
+    # 运营自定义文案 (留空回退到系统默认文案)
+    closed_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 不可填时展示给玩家的原因说明
+    success_message: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # 提交成功页文案
 
     # 时间戳
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
