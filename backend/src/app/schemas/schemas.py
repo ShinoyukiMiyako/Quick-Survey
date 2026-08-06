@@ -131,6 +131,11 @@ class SurveyUpdate(BaseModel):
     theme_color: Optional[str] = Field(None, max_length=16)
     summary: Optional[str] = Field(None, max_length=255)
     estimated_minutes: Optional[int] = Field(None, ge=1)
+    # 场景动作开关 (提交后行为)
+    review_required: Optional[bool] = None
+    action_add_whitelist: Optional[bool] = None
+    action_issue_code: Optional[bool] = None
+    action_notify_group: Optional[bool] = None
 
 
 class SurveyReorderItem(BaseModel):

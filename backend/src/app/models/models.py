@@ -44,6 +44,13 @@ class Survey(Base):
     summary: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # 卡片简介 (短于 description)
     estimated_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 预计耗时(分钟)
 
+    # 场景动作 (提交后行为按表单可配; whitelist 默认全开, collection 默认全关 —— 见 create_survey)
+    # 模型默认全 True 保持白名单行为; 收集表在 create_survey 里按 category 播种为 False。
+    review_required: Mapped[bool] = mapped_column(Boolean, default=True)  # 是否人工审核 (关=免审, 提交即终态)
+    action_add_whitelist: Mapped[bool] = mapped_column(Boolean, default=True)  # 通过时加 MC 白名单
+    action_issue_code: Mapped[bool] = mapped_column(Boolean, default=True)  # 允许通过后领取注册码
+    action_notify_group: Mapped[bool] = mapped_column(Boolean, default=True)  # 提交/审核入审核群通知队列
+
     # 时间戳
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, onupdate=utc_now)
@@ -103,8 +110,8 @@ class Submission(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     survey_id: Mapped[int] = mapped_column(ForeignKey("surveys.id", ondelete="CASCADE"), nullable=False)
     
-    # 提交者信息
-    player_name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)  # 玩家名
+    # 提交者信息 (player_name 可空: 仅白名单卷/配了 role=player_name 题时才必填, 匿名收集表可空)
+    player_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)  # 玩家名
     qq: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # 联系QQ (从 role=qq 题抽取, 可空)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # IP地址
     

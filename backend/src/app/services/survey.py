@@ -68,6 +68,55 @@ def is_question_visible(condition, answer_map: dict, question_map: dict) -> bool
     return str(answer_value) in show_set
 
 
+def _answer_to_cell(content: Optional[dict], qtype: str) -> str:
+    """把一条答案 content 按题型压成 CSV 单元格文本 (纯函数)。"""
+    if not content:
+        return ""
+    if qtype == "multiple":
+        return ", ".join(str(v) for v in (content.get("values") or []))
+    if qtype == "boolean":
+        v = content.get("value")
+        if v in (True, "true", "True"):
+            return "是"
+        if v in (False, "false", "False"):
+            return "否"
+        return ""
+    if qtype == "image":
+        return ", ".join(str(i) for i in (content.get("images") or []))
+    # single / text 及其它: 优先 value, 再 text
+    val = content.get("value")
+    if val is None:
+        val = content.get("text")
+    return "" if val is None else str(val)
+
+
+def build_submissions_csv(survey, submissions) -> str:
+    """把某问卷的全部提交导出为 CSV 文本 (含 Excel BOM; 每题一列, 系统字段在前)。纯函数, 便于单测。"""
+    import csv
+    import io
+
+    questions = sorted(survey.questions, key=lambda q: q.order)
+    headers = ["提交ID", "提交时间", "玩家名", "QQ", "状态"] + [q.title for q in questions]
+
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM, 让 Excel 正确识别中文
+    writer = csv.writer(buf)
+    writer.writerow(headers)
+    for sub in submissions:
+        amap = {a.question_id: a.content for a in sub.answers}
+        row = [
+            sub.id,
+            sub.created_at.isoformat() if sub.created_at else "",
+            sub.player_name or "",
+            sub.qq or "",
+            sub.status,
+        ]
+        for q in questions:
+            row.append(_answer_to_cell(amap.get(q.id), q.type))
+        writer.writerow(row)
+    return buf.getvalue()
+
+
 class SurveyService:
     """问卷服务"""
     
@@ -80,6 +129,8 @@ class SurveyService:
         """创建问卷"""
         # 使用问卷标题生成简单的访问码
         code = secrets.token_urlsafe(8)[:8]
+        # 按栏目播种提交后动作默认: 收集表纯收集(免审+零白名单动作), 白名单卷全开
+        wl = data.category != "collection"
         survey = Survey(
             title=data.title,
             description=data.description,
@@ -93,6 +144,10 @@ class SurveyService:
             theme_color=data.theme_color,
             summary=data.summary,
             estimated_minutes=data.estimated_minutes,
+            review_required=wl,
+            action_add_whitelist=wl,
+            action_issue_code=wl,
+            action_notify_group=wl,
             created_by=created_by,
         )
         
@@ -379,7 +434,8 @@ class SubmissionService:
             qq=qq,
             ip_address=ip_address,
             fill_duration=fill_duration,
-            status="pending",
+            # 免审卷(收集表)提交即终态 approved, 不进待审队列; 需审核卷进 pending
+            status="pending" if survey.review_required else "approved",
             # 不可枚举自助凭据: 256 bit 随机, 碰撞概率可忽略。万一撞唯一索引由异常自然冒泡, 不静默吞。
             token=secrets.token_urlsafe(32),
         )
@@ -437,23 +493,29 @@ class SubmissionService:
         status: Optional[str] = None,
         survey_id: Optional[int] = None,
         player_name: Optional[str] = None,
+        category: Optional[str] = None,
     ) -> tuple[list[Submission], int]:
-        """获取提交列表"""
+        """获取提交列表。category 过滤用于把审核队列限定在白名单卷、收集表结果只看 collection。"""
         query = select(Submission).options(selectinload(Submission.survey))
         count_query = select(func.count(Submission.id))
-        
+
+        if category:
+            # 按问卷栏目过滤 (需联表 surveys)
+            query = query.join(Survey, Submission.survey_id == Survey.id).where(Survey.category == category)
+            count_query = count_query.join(Survey, Submission.survey_id == Survey.id).where(Survey.category == category)
+
         if status:
             query = query.where(Submission.status == status)
             count_query = count_query.where(Submission.status == status)
-        
+
         if survey_id:
             query = query.where(Submission.survey_id == survey_id)
             count_query = count_query.where(Submission.survey_id == survey_id)
-        
+
         if player_name:
             query = query.where(Submission.player_name.contains(player_name))
             count_query = count_query.where(Submission.player_name.contains(player_name))
-        
+
         # 获取总数
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
@@ -464,9 +526,20 @@ class SubmissionService:
         
         result = await db.execute(query)
         submissions = result.scalars().all()
-        
+
         return list(submissions), total
-    
+
+    @staticmethod
+    async def get_submissions_with_answers(db: AsyncSession, survey_id: int) -> list[Submission]:
+        """取某问卷全部提交(含答案), 供 CSV 导出。按提交时间升序。"""
+        result = await db.execute(
+            select(Submission)
+            .options(selectinload(Submission.answers))
+            .where(Submission.survey_id == survey_id)
+            .order_by(Submission.created_at.asc())
+        )
+        return list(result.scalars().all())
+
     @staticmethod
     async def review_submission(
         db: AsyncSession,

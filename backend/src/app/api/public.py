@@ -130,6 +130,10 @@ async def get_public_survey(
             "code": survey.code,
             "title": survey.title,
             "description": survey.description,
+            # 场景标记: 前端据此决定成功页展示 (收集表不显示查询凭据/领码)
+            "category": survey.category,
+            "requires_review": survey.review_required,
+            "issues_code": survey.action_issue_code,
             "questions": [
                 {
                     "id": q.id,
@@ -252,9 +256,10 @@ async def submit_survey(
         elif q_role == "qq" and q.id in answer_map:
             role_qq = _role_scalar(answer_map[q.id])
 
-    # 玩家名优先用题目标记抽取, 兼容旧前端顶层 player_name; 缺失则拒绝 (白名单关联键不能空)
-    effective_player_name = (role_player_name or data.player_name or "").strip()
-    if not effective_player_name:
+    # 玩家名: 仅当问卷配了 role=player_name 题(白名单关联键)时才必填; 匿名收集表可空。
+    requires_player_name = any(getattr(q, "role", None) == "player_name" for q in survey.questions)
+    effective_player_name = (role_player_name or data.player_name or "").strip() or None
+    if requires_player_name and not effective_player_name:
         raise HTTPException(
             status_code=400,
             detail="缺少玩家名: 请填写玩家名 (或在问卷中配置一道标记为玩家名的题)"
@@ -264,32 +269,33 @@ async def submit_survey(
     if role_qq and (not role_qq.isdigit() or len(role_qq) > 15):
         raise HTTPException(status_code=400, detail="QQ号需为纯数字且长度合法")
 
-    # 创建提交（包含填写耗时 + 按 role 抽取的玩家名/QQ）
+    # 创建提交（包含填写耗时 + 按 role 抽取的玩家名/QQ; 免审卷提交即终态见 create_submission）
     submission = await SubmissionService.create_submission(
         db, survey, data, ip_address, fill_duration,
         player_name=effective_player_name, qq=role_qq,
     )
 
-    # 记录活动日志
-    await ActivityService.log_submit(db, effective_player_name, submission.id)
+    # 记录活动日志 (玩家名可空时用占位; ActivityLog.player_name 非空)
+    await ActivityService.log_submit(db, effective_player_name or f"#{submission.id}", submission.id)
 
-    # 入队审核群通知 (尽力而为: 入队失败不影响提交本身)
-    try:
-        await bot_notify.enqueue(db, submission, bot_notify.SUBMIT)
-    except Exception:
-        await db.rollback()  # 清掉入队失败的脏会话, 不污染后续 (尽力而为, 不影响提交)
-        logger.warning("入队 submit 通知失败 (不影响提交)", exc_info=True)
+    # 入队审核群通知 (仅启用该动作的卷; 尽力而为: 入队失败不影响提交本身)
+    if survey.action_notify_group:
+        try:
+            await bot_notify.enqueue(db, submission, bot_notify.SUBMIT)
+        except Exception:
+            await db.rollback()  # 清掉入队失败的脏会话, 不污染后续 (尽力而为, 不影响提交)
+            logger.warning("入队 submit 通知失败 (不影响提交)", exc_info=True)
 
     # 记录 IP 提交（用于频率限制）
     await record_ip_submission(ip_address, code)
-    
+
     return ApiResponse(
         success=True,
         data={
             "id": submission.id,
-            # 自助凭据: 玩家需妥善保存, 凭此查询进度并在通过后领取注册码
+            # 自助凭据: 需审核卷凭此查询进度/领码; 免审收集表用不到, 前端据 requires_review 决定是否展示
             "token": submission.token,
-            "message": "提交成功，请等待审核",
+            "message": "提交成功，感谢参与～" if not survey.review_required else "提交成功，请等待审核",
         }
     )
 
@@ -398,6 +404,11 @@ async def redeem_registration_code(
     submission = await SubmissionService.get_submission_by_token(db, token)
     if not submission:
         raise HTTPException(status_code=404, detail="凭据无效或未找到对应的问卷提交")
+
+    # 仅启用发码动作的卷(白名单卷)可领码; 收集表无此动作直接拒绝
+    survey = await SurveyService.get_survey_by_id(db, submission.survey_id)
+    if not survey or not survey.action_issue_code:
+        raise HTTPException(status_code=409, detail="该问卷不发放注册码")
 
     status, code_data = await SubmissionService.issue_registration_code(
         db, submission, mod_issue_registration_code

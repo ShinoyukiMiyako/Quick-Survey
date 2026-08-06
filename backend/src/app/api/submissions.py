@@ -52,13 +52,14 @@ async def run_cleanup(
 
 @router.get("/stats/overview", response_model=ApiResponse)
 async def get_stats(
+    category: Optional[str] = Query(None, description="按栏目过滤(审核页传 whitelist 只统计白名单卷)"),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
     """获取统计概览"""
-    _, pending_count = await SubmissionService.get_submissions(db, 1, 1, "pending")
-    _, approved_count = await SubmissionService.get_submissions(db, 1, 1, "approved")
-    _, rejected_count = await SubmissionService.get_submissions(db, 1, 1, "rejected")
+    _, pending_count = await SubmissionService.get_submissions(db, 1, 1, "pending", category=category)
+    _, approved_count = await SubmissionService.get_submissions(db, 1, 1, "approved", category=category)
+    _, rejected_count = await SubmissionService.get_submissions(db, 1, 1, "rejected", category=category)
     
     return ApiResponse(
         success=True,
@@ -78,12 +79,13 @@ async def get_submissions(
     status: Optional[str] = Query(None, pattern="^(pending|approved|rejected)$"),
     survey_id: Optional[int] = None,
     player_name: Optional[str] = None,
+    category: Optional[str] = Query(None, description="按栏目过滤: whitelist=审核队列 / collection=收集表结果"),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(get_current_user),
 ):
-    """获取提交列表（审核列表）"""
+    """获取提交列表。审核队列传 category=whitelist; 收集表结果传 survey_id。"""
     submissions, total = await SubmissionService.get_submissions(
-        db, page, size, status, survey_id, player_name
+        db, page, size, status, survey_id, player_name, category
     )
     
     items = []
@@ -147,6 +149,9 @@ async def get_submission(
             "id": submission.id,
             "survey_id": submission.survey_id,
             "survey_title": submission.survey.title if submission.survey else "",
+            # 场景动作: 面板据此决定通过时是否加白 (收集表不加白)
+            "survey_category": submission.survey.category if submission.survey else "whitelist",
+            "survey_add_whitelist": submission.survey.action_add_whitelist if submission.survey else True,
             "player_name": submission.player_name,
             "qq": submission.qq,
             "ip_address": submission.ip_address,
@@ -191,15 +196,16 @@ async def review_submission(
         note=data.review_note,
     )
 
-    # 入队审核群通知 (尽力而为: 入队失败不影响审核结果)
-    try:
-        if data.status == "approved":
-            await bot_notify.enqueue(db, submission, bot_notify.APPROVED)
-        else:
-            await bot_notify.enqueue(db, submission, bot_notify.REJECTED, reason=data.review_note)
-    except Exception:
-        await db.rollback()  # 清掉入队失败的脏会话 (尽力而为, 不影响审核结果)
-        logger.warning("入队审核通知失败 (不影响审核)", exc_info=True)
+    # 入队审核群通知 (仅启用该动作的卷; 尽力而为: 入队失败不影响审核结果)
+    if submission.survey and submission.survey.action_notify_group:
+        try:
+            if data.status == "approved":
+                await bot_notify.enqueue(db, submission, bot_notify.APPROVED)
+            else:
+                await bot_notify.enqueue(db, submission, bot_notify.REJECTED, reason=data.review_note)
+        except Exception:
+            await db.rollback()  # 清掉入队失败的脏会话 (尽力而为, 不影响审核结果)
+            logger.warning("入队审核通知失败 (不影响审核)", exc_info=True)
     
     return ApiResponse(
         success=True,

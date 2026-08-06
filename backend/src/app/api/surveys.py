@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -16,7 +16,8 @@ from app.schemas import (
     QuestionUpdate,
     QuestionResponse,
 )
-from app.services import SurveyService, QuestionService
+from app.services import SurveyService, QuestionService, SubmissionService
+from app.services.survey import build_submissions_csv
 
 
 router = APIRouter(prefix="/surveys", tags=["问卷管理"])
@@ -199,6 +200,10 @@ async def get_survey(
             "theme_color": survey.theme_color,
             "summary": survey.summary,
             "estimated_minutes": survey.estimated_minutes,
+            "review_required": survey.review_required,
+            "action_add_whitelist": survey.action_add_whitelist,
+            "action_issue_code": survey.action_issue_code,
+            "action_notify_group": survey.action_notify_group,
             "questions": [
                 {
                     "id": q.id,
@@ -264,6 +269,28 @@ async def delete_survey(
     return ApiResponse(
         success=True,
         data={"message": "删除成功"}
+    )
+
+
+@router.get("/{survey_id}/export")
+async def export_survey_submissions(
+    survey_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(get_current_user),
+):
+    """导出某问卷的全部提交为 CSV (收集表结果导出; 每题一列, 含 Excel BOM)。"""
+    survey = await SurveyService.get_survey_by_id(db, survey_id)
+    if not survey:
+        raise HTTPException(status_code=404, detail="问卷不存在")
+
+    submissions = await SubmissionService.get_submissions_with_answers(db, survey_id)
+    csv_text = build_submissions_csv(survey, submissions)
+
+    filename = f"survey_{survey_id}_submissions.csv"
+    return Response(
+        content=csv_text,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
