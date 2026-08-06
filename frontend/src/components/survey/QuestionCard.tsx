@@ -1,12 +1,23 @@
 import { motion } from 'framer-motion'
+import { Star } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
 import type { Question, AnswerSubmit } from '@/types/survey'
 import { ImageUploader } from './ImageUploader'
+
+// 玩家端没有 shadcn select 组件, 原生 <select> 按 Input 的视觉语言拉齐。
+// option 单独指定底色: 部分浏览器下拉项会继承控件的 bg-transparent, 深色模式下会白底白字。
+const NATIVE_SELECT_CLASS =
+  'border-input dark:bg-input/30 flex h-12 w-full cursor-pointer rounded-2xl border bg-transparent px-4 text-base shadow-xs outline-none transition-all duration-200 hover:border-primary/30 hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] [&>option]:bg-background [&>option]:text-foreground'
+
+// 输入类题型的统一提示文案样式, 与 text 题的字数计数保持一致
+const HINT_CLASS = 'text-sm text-muted-foreground mt-2'
 
 interface QuestionCardProps {
   question: Question
@@ -44,7 +55,32 @@ export function QuestionCard({ question, value, onChange, index }: QuestionCardP
           </RadioGroup>
         )
 
-      case 'multiple':
+      case 'select': {
+        const selected = typeof value?.value === 'string' ? value.value : ''
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <select
+              value={selected}
+              onChange={(e) => onChange(e.target.value === '' ? {} : { value: e.target.value })}
+              className={NATIVE_SELECT_CLASS}
+            >
+              <option value="">请选择...</option>
+              {question.options?.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className={HINT_CLASS}>共 {question.options?.length ?? 0} 个选项，请选择其一</p>
+          </motion.div>
+        )
+      }
+
+      case 'multiple': {
         const selectedValues = (value?.values as string[]) || []
         return (
           <div className="space-y-3">
@@ -75,8 +111,9 @@ export function QuestionCard({ question, value, onChange, index }: QuestionCardP
             ))}
           </div>
         )
+      }
 
-      case 'boolean':
+      case 'boolean': {
         // 判断题：类似单选题，提供"是/否"两个选项
         const boolValue = value?.value as boolean | undefined
         return (
@@ -106,6 +143,7 @@ export function QuestionCard({ question, value, onChange, index }: QuestionCardP
             ))}
           </RadioGroup>
         )
+      }
 
       case 'text':
         return (
@@ -128,6 +166,140 @@ export function QuestionCard({ question, value, onChange, index }: QuestionCardP
             )}
           </motion.div>
         )
+
+      case 'short_text': {
+        const shortText = typeof value?.text === 'string' ? value.text : ''
+        const maxLength = question.validation?.max_length
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Input
+              placeholder="请输入您的回答..."
+              value={shortText}
+              onChange={(e) => onChange({ text: e.target.value })}
+              className="h-12 rounded-2xl text-base"
+              maxLength={maxLength}
+            />
+            {maxLength ? (
+              <p className={`${HINT_CLASS} text-right`}>
+                {shortText.length} / {maxLength}
+              </p>
+            ) : (
+              <p className={HINT_CLASS}>请填写一行内容，不要换行</p>
+            )}
+          </motion.div>
+        )
+      }
+
+      case 'number': {
+        const minValue = question.validation?.min_value
+        const maxValue = question.validation?.max_value
+        const numberText =
+          value?.value === undefined || value?.value === null ? '' : String(value.value)
+        const rangeHint =
+          minValue !== undefined && maxValue !== undefined
+            ? `请填写 ${minValue} - ${maxValue} 之间的数字`
+            : minValue !== undefined
+              ? `不小于 ${minValue}`
+              : maxValue !== undefined
+                ? `不大于 ${maxValue}`
+                : '请填写数字，支持小数'
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Input
+              type="number"
+              inputMode="decimal"
+              placeholder="请输入数字"
+              value={numberText}
+              min={minValue}
+              max={maxValue}
+              onChange={(e) => {
+                const raw = e.target.value
+                const parsed = Number(raw)
+                // 清空必须落成 {} 而非 0, 否则必填校验会把空输入误判为已答
+                onChange(raw === '' || Number.isNaN(parsed) ? {} : { value: parsed })
+              }}
+              className="h-12 rounded-2xl text-base"
+            />
+            <p className={HINT_CLASS}>{rangeHint}</p>
+          </motion.div>
+        )
+      }
+
+      case 'date': {
+        const minDate = question.validation?.min_date
+        const maxDate = question.validation?.max_date
+        const dateValue = typeof value?.value === 'string' ? value.value : ''
+        const rangeHint =
+          minDate && maxDate
+            ? `可选范围 ${minDate} 至 ${maxDate}`
+            : minDate
+              ? `不早于 ${minDate}`
+              : maxDate
+                ? `不晚于 ${maxDate}`
+                : '请选择日期'
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Input
+              type="date"
+              value={dateValue}
+              min={minDate}
+              max={maxDate}
+              onChange={(e) => onChange(e.target.value === '' ? {} : { value: e.target.value })}
+              className="h-12 rounded-2xl text-base"
+            />
+            <p className={HINT_CLASS}>{rangeHint}</p>
+          </motion.div>
+        )
+      }
+
+      case 'rating': {
+        const maxRating = question.validation?.max_rating || 5
+        const current = typeof value?.value === 'number' ? value.value : 0
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {Array.from({ length: maxRating }, (_, i) => i + 1).map((score, i) => (
+                <motion.button
+                  key={score}
+                  type="button"
+                  aria-label={`${score} 分`}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: 0.1 + i * 0.05 }}
+                  onClick={() => onChange({ value: score })}
+                  className={cn(
+                    'flex h-12 w-12 items-center justify-center rounded-2xl border transition-all duration-200',
+                    score <= current
+                      ? 'border-primary/50 bg-primary/5 text-primary'
+                      : 'border-border/50 text-muted-foreground hover:border-primary/30 hover:bg-accent/50',
+                  )}
+                >
+                  <Star className={cn('w-5 h-5', score <= current && 'fill-current')} />
+                </motion.button>
+              ))}
+            </div>
+            <p className={HINT_CLASS}>
+              {current > 0 ? `已选 ${current} / ${maxRating} 分` : `请评分，1 - ${maxRating} 分`}
+            </p>
+          </motion.div>
+        )
+      }
 
       case 'image':
         return (

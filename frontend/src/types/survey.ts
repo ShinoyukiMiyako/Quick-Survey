@@ -9,17 +9,65 @@ export interface QuestionValidation {
   min_length?: number
   max_length?: number
   max_images?: number
+  min_value?: number   // number 题下限（闭区间）
+  max_value?: number   // number 题上限（闭区间）
+  max_rating?: number  // rating 题满分，缺省 5
+  min_date?: string    // date 题下限，"YYYY-MM-DD"
+  max_date?: string    // date 题上限，"YYYY-MM-DD"
+}
+
+// 条件运算符（与后端 services/conditions.py 一一对应）
+export type ConditionOperator =
+  | 'eq'
+  | 'neq'
+  | 'in'
+  | 'not_in'
+  | 'contains'
+  | 'gt'
+  | 'lt'
+  | 'answered'
+  | 'not_answered'
+
+// 单条条件规则
+export interface ConditionRule {
+  question_id: number  // 依赖题的 question_id（稳定引用，不随题序/编辑变化）
+  operator: ConditionOperator
+  value?: string | number | string[] // answered / not_answered 忽略此字段
 }
 
 // 条件显示规则
-// 用于实现分支逻辑：根据某道题的答案决定是否显示当前题目
+// 用于实现分支逻辑：根据其它题的答案决定是否显示当前题目。
+// 新旧两套字段并存：存量库里全是旧形态，归一化交给 lib/conditions.ts。
 export interface QuestionCondition {
-  depends_on: number           // 依赖题的 question_id（稳定引用，不随题序/编辑变化）
-  show_when: string | string[] // 触发显示的答案值（支持单值或多值）
+  // 新形态
+  action?: 'show' | 'hide'  // 缺省 show
+  match?: 'all' | 'any'     // 缺省 all
+  rules?: ConditionRule[]
+  // 旧形态（存量数据）
+  depends_on?: number
+  show_when?: string | string[]
 }
 
 // 问题类型
-export type QuestionType = 'single' | 'multiple' | 'boolean' | 'text' | 'image'
+export type QuestionType =
+  | 'single'
+  | 'select'
+  | 'multiple'
+  | 'boolean'
+  | 'text'
+  | 'short_text'
+  | 'number'
+  | 'date'
+  | 'rating'
+  | 'image'
+
+// 问卷可填状态（后端 compute_availability 结果）
+export type AvailabilityState = 'open' | 'inactive' | 'unpublished' | 'not_started' | 'ended' | 'full'
+
+export interface Availability {
+  state: AvailabilityState
+  message: string | null // open 时为 null，其余为可展示给玩家的中文文案
+}
 
 // 问题
 export interface Question {
@@ -42,7 +90,15 @@ export interface PublicSurvey {
   category?: string          // whitelist / collection
   requires_review?: boolean  // 是否需人工审核 (收集表为 false)
   issues_code?: boolean      // 通过后是否发注册码 (收集表为 false)
-  questions: Question[]
+  availability: Availability
+  locked: boolean            // 设了访问口令; 为 true 时后端不下发 questions
+  require_consent: boolean
+  privacy_notice: string | null
+  theme_color: string | null
+  icon: string | null
+  success_message: string | null
+  estimated_minutes: number | null
+  questions: Question[]      // state 非 open 或 locked 时为空数组 (不泄题)
 }
 
 // 门户入口列表项 (轻量, 不含 questions; 可空字段随后端 JSON 为 null)
@@ -59,15 +115,17 @@ export interface SurveyListItem {
   is_pinned: boolean
   sort_order: number
   question_count: number
+  availability: Availability // 不可填的卷仍会列出, 由前端渲染徽标并禁点
+  locked: boolean
 }
 
 // 答案提交
 export interface AnswerSubmit {
   question_id: number
   content: {
-    value?: string | boolean // 单选、判断
+    value?: string | boolean | number // 单选、下拉、判断、数字、日期、评分
     values?: string[] // 多选
-    text?: string // 简答
+    text?: string // 简答、单行文本
     images?: string[] // 图片上传
   }
 }
@@ -79,6 +137,9 @@ export interface SubmissionCreate {
   // 安全相关字段
   turnstile_token?: string
   start_time?: number
+  // 门禁字段
+  access_password?: string // 口令卷提交时必带, 后端二次校验防绕过 unlock
+  consent?: boolean        // require_consent 的卷必须为 true
 }
 
 // 安全配置

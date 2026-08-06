@@ -49,6 +49,8 @@ export async function getSurveyByCode(code: string): Promise<PublicSurvey> {
   }
 }
 
+// 注意: /public/survey/active 是旧的单激活卷入口, 后端未随门户改造下发 availability/locked 等字段。
+// 门户与答题页一律走 getSurveyByCode, 这里仅为兼容历史调用保留。
 export async function getActiveSurvey(): Promise<PublicSurvey> {
   try {
     const { data } = await http.get<ApiResponse<PublicSurvey>>('/public/survey/active')
@@ -67,6 +69,20 @@ export async function listSurveys(category?: string): Promise<SurveyListItem[]> 
     return unwrap(data, '加载问卷列表失败').surveys
   } catch (err) {
     throw toError(err, '加载问卷列表失败')
+  }
+}
+
+// 口令卷解锁: 校验通过后后端返回带 questions 的完整问卷 (locked 已变为 false)。
+// 该端点有 IP 限流, 失败 (403) 的文案直接透传给玩家。
+export async function unlockSurvey(code: string, password: string): Promise<PublicSurvey> {
+  try {
+    const { data } = await http.post<ApiResponse<PublicSurvey>>(
+      `/public/surveys/${encodeURIComponent(code)}/unlock`,
+      { password },
+    )
+    return unwrap(data, '访问口令不正确')
+  } catch (err) {
+    throw toError(err, '访问口令不正确')
   }
 }
 

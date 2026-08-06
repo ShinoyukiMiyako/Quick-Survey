@@ -1,14 +1,25 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { FileText, ArrowRight, AlertCircle, Search, Clock, ListChecks, Pin } from 'lucide-react'
+import { FileText, ArrowRight, AlertCircle, Search, Clock, ListChecks, Pin, Lock } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { listSurveys } from '@/lib/api'
-import type { SurveyListItem } from '@/types/survey'
+import { cn } from '@/lib/utils'
+import type { AvailabilityState, SurveyListItem } from '@/types/survey'
 import { QueryDialog } from '@/components/survey/QueryDialog'
+
+// 不可填状态的卡片徽标文案。后端列表接口只会给出 not_started/ended/full,
+// 其余两项是为了覆盖类型全集, 免得将来放开过滤时漏渲染
+const AVAILABILITY_BADGES: Record<Exclude<AvailabilityState, 'open'>, string> = {
+  inactive: '已停用',
+  unpublished: '未发布',
+  not_started: '未开始',
+  ended: '已截止',
+  full: '名额已满',
+}
 
 export function HomePage() {
   const [loading, setLoading] = useState(true)
@@ -112,67 +123,86 @@ export function HomePage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((s, i) => (
-            <motion.button
-              key={s.code}
-              type="button"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: Math.min(i * 0.05, 0.3) }}
-              onClick={() => navigate(`/survey/${s.code}`)}
-              className="group text-left"
-            >
-              <Card className="h-full overflow-hidden rounded-2xl border-border/60 transition-all group-hover:border-primary/50 group-hover:shadow-md">
-                {s.cover_url ? (
-                  <div className="h-28 w-full overflow-hidden bg-muted">
-                    <img src={s.cover_url} alt="" className="h-full w-full object-cover" />
-                  </div>
-                ) : null}
-                <CardContent className="space-y-3 p-5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg"
-                      style={
-                        s.theme_color
-                          ? { backgroundColor: `${s.theme_color}1a`, color: s.theme_color }
-                          : undefined
-                      }
-                    >
-                      {s.icon ? (
-                        <span>{s.icon}</span>
-                      ) : (
-                        <FileText className={s.theme_color ? 'h-5 w-5' : 'h-5 w-5 text-primary'} />
-                      )}
+          {filtered.map((s, i) => {
+            // 不可填的卷仍然列出但禁点; 口令卷只是加徽标, 仍要能点进去输口令
+            const closedLabel =
+              s.availability.state === 'open' ? null : AVAILABILITY_BADGES[s.availability.state]
+            return (
+              <motion.button
+                key={s.code}
+                type="button"
+                disabled={closedLabel !== null}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: Math.min(i * 0.05, 0.3) }}
+                onClick={() => navigate(`/survey/${s.code}`)}
+                className={cn('group text-left', closedLabel !== null && 'cursor-not-allowed opacity-60')}
+              >
+                <Card className="h-full overflow-hidden rounded-2xl border-border/60 transition-all group-hover:border-primary/50 group-hover:shadow-md">
+                  {s.cover_url ? (
+                    <div className="h-28 w-full overflow-hidden bg-muted">
+                      <img src={s.cover_url} alt="" className="h-full w-full object-cover" />
                     </div>
-                    {s.is_pinned ? (
-                      <Badge variant="secondary" className="gap-1">
-                        <Pin className="h-3 w-3" />
-                        置顶
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="font-semibold leading-snug line-clamp-2">{s.title}</h3>
-                    {s.summary || s.description ? (
-                      <p className="line-clamp-2 text-sm text-muted-foreground">{s.summary || s.description}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex items-center gap-3 pt-1 text-xs text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <ListChecks className="h-3.5 w-3.5" />
-                      {s.question_count} 题
-                    </span>
-                    {s.estimated_minutes ? (
+                  ) : null}
+                  <CardContent className="space-y-3 p-5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg"
+                        style={
+                          s.theme_color
+                            ? { backgroundColor: `${s.theme_color}1a`, color: s.theme_color }
+                            : undefined
+                        }
+                      >
+                        {s.icon ? (
+                          <span>{s.icon}</span>
+                        ) : (
+                          <FileText className={s.theme_color ? 'h-5 w-5' : 'h-5 w-5 text-primary'} />
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {s.is_pinned ? (
+                          <Badge variant="secondary" className="gap-1">
+                            <Pin className="h-3 w-3" />
+                            置顶
+                          </Badge>
+                        ) : null}
+                        {s.locked ? (
+                          <Badge variant="secondary" className="gap-1">
+                            <Lock className="h-3 w-3" />
+                            需口令
+                          </Badge>
+                        ) : null}
+                        {closedLabel ? (
+                          <Badge variant="outline" className="text-muted-foreground">
+                            {closedLabel}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="font-semibold leading-snug line-clamp-2">{s.title}</h3>
+                      {s.summary || s.description ? (
+                        <p className="line-clamp-2 text-sm text-muted-foreground">{s.summary || s.description}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-3 pt-1 text-xs text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5" />约 {s.estimated_minutes} 分钟
+                        <ListChecks className="h-3.5 w-3.5" />
+                        {s.question_count} 题
                       </span>
-                    ) : null}
-                    <ArrowRight className="ml-auto h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.button>
-          ))}
+                      {s.estimated_minutes ? (
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5" />约 {s.estimated_minutes} 分钟
+                        </span>
+                      ) : null}
+                      <ArrowRight className="ml-auto h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.button>
+            )
+          })}
         </div>
       )}
 
