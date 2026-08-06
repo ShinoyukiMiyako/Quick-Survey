@@ -39,6 +39,9 @@ export interface PublicSurvey {
   code: string
   title: string
   description?: string
+  category?: string          // whitelist / collection
+  requires_review?: boolean  // 是否需人工审核 (收集表为 false)
+  issues_code?: boolean      // 通过后是否发注册码 (收集表为 false)
   questions: Question[]
 }
 

@@ -296,14 +296,14 @@ export function SurveyPage() {
           >
             <h2 className="text-3xl font-bold mb-3">提交成功！</h2>
             <p className="text-muted-foreground mb-6 text-lg">
-              感谢您的填写，请等待管理员审核
+              {survey?.requires_review === false ? '感谢您的填写，我们已收到～' : '感谢您的填写，请等待管理员审核'}
             </p>
 
-            {submittedToken && (
+            {submittedToken && (survey?.requires_review || survey?.issues_code) && (
               <div className="mb-8 text-left rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4">
                 <p className="text-sm font-medium mb-2">请妥善保存您的查询凭据</p>
                 <p className="text-xs text-muted-foreground mb-3">
-                  凭此凭据可查询审核进度，并在通过后领取进服注册码。本浏览器已自动记住，
+                  凭此凭据可查询审核进度{survey?.issues_code ? '，并在通过后领取进服注册码' : ''}。本浏览器已自动记住，
                   但清除浏览器数据或更换设备后将丢失，建议另行保存。
                 </p>
                 <div className="flex gap-2">
