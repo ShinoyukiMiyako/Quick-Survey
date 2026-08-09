@@ -150,32 +150,42 @@ def check_submit_time(start_time: Optional[float]) -> float:
     return elapsed
 
 
+# 本机 nginx 反代的对端地址 (线上 proxy_pass 指向 127.0.0.1:8000, 后端也只绑回环)。
+# 转发头是纯文本、客户端想写什么就写什么, 只有确认请求确实来自自己的反代时才可采信。
+_TRUSTED_PROXIES = frozenset({"127.0.0.1", "::1"})
+
+
 def get_real_ip(request) -> Optional[str]:
     """
-    获取用户真实 IP 地址
-    
-    支持常见的代理头部：
-    - X-Forwarded-For
-    - X-Real-IP
-    - CF-Connecting-IP (Cloudflare)
+    获取用户真实 IP 地址。
+
+    所有按 IP 的闸门都建立在本函数的返回值上 —— 每日提交/上传/领码限流、查询与解锁的
+    per-IP 限流、每卷的每 IP 提交上限, 以及面板展示的 IP 与归属地。所以这里一旦无条件
+    采信转发头, 上述闸门就全部退化成"由请求方自己决定算哪个 IP", 换个头即可绕过。
+
+    信任边界: 只有来自本机反代的请求才认转发头; 直连一律只认 TCP 源地址。
+
+    不再读 CF-Connecting-IP: 当前部署前面没有 Cloudflare (线上响应头无 cf-ray), nginx
+    也从不设置该头, 它 100% 由客户端自填。日后真接入 Cloudflare, 正确做法是在 nginx 配
+    `set_real_ip_from <CF 网段>` + `real_ip_header CF-Connecting-IP` 由 nginx 改写
+    $remote_addr, 后端仍然只需认 X-Real-IP, 不必认识这个头。
     """
-    # Cloudflare
-    if cf_ip := request.headers.get("CF-Connecting-IP"):
-        return cf_ip
-    
-    # X-Forwarded-For (可能包含多个 IP，取第一个)
-    if forwarded := request.headers.get("X-Forwarded-For"):
-        return forwarded.split(",")[0].strip()
-    
-    # X-Real-IP
+    peer = request.client.host if request.client else None
+
+    if peer not in _TRUSTED_PROXIES:
+        return peer
+
+    # nginx 用 `proxy_set_header X-Real-IP $remote_addr` 硬覆盖同名头, 客户端自带的到不了这里
     if real_ip := request.headers.get("X-Real-IP"):
-        return real_ip
-    
-    # 直连
-    if request.client:
-        return request.client.host
-    
-    return None
+        return real_ip.strip()
+
+    # 退路 (反代未设 X-Real-IP 时)。$proxy_add_x_forwarded_for 的形态是
+    # "客户端自填段, ..., nginx 追加的 $remote_addr", 只有最右一段出自反代之手;
+    # 取最左恰恰是取那段唯一可被伪造的值。
+    if forwarded := request.headers.get("X-Forwarded-For"):
+        return forwarded.split(",")[-1].strip() or peer
+
+    return peer
 
 
 def get_security_config() -> dict:
