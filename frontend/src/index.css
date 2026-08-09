@@ -42,6 +42,9 @@
 }
 
 :root {
+  /* 浏览器据此决定原生控件 (数字步进器、日期选择器图标、下拉、滚动条) 用亮色还是暗色渲染。
+     不声明的话一律按亮色画, 深色主题下就会冒出一个白底的数字步进器方块。 */
+  color-scheme: light;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -77,6 +80,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -160,4 +164,19 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
   @apply ring-2 ring-primary/30 ring-offset-2 ring-offset-background outline-none;
+}
+
+/* 数字题去掉原生步进箭头。即便 color-scheme 已让它跟随主题, 那对小箭头在圆角大输入框里
+   仍是块突兀的方形色块; 范围限制由题目下方的提示与提交前校验兜着, 不靠它点。
+   Firefox 用 appearance: textfield, Chromium 系要单独干掉伪元素。 */
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
