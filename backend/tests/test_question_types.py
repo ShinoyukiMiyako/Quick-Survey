@@ -8,12 +8,14 @@ import re
 import pytest
 
 from app.services.question_types import (
+    ANSWERABLE_TYPES,
     QUESTION_TYPES,
     QUESTION_TYPE_NAMES,
     QUESTION_TYPE_PATTERN,
     answer_scalar,
     answer_to_cell,
     comparable_value,
+    is_answerable,
     is_answered,
     validate_answer,
 )
@@ -27,7 +29,7 @@ def test_registry_covers_all_names():
     # 顺序也锁死: 前端 QuestionType 联合类型与 QUESTION_TYPE_PATTERN 都按这个次序对齐
     assert QUESTION_TYPE_NAMES == (
         "single", "select", "multiple", "boolean", "text",
-        "short_text", "number", "date", "rating", "image",
+        "short_text", "number", "date", "rating", "image", "section",
     )
     assert set(QUESTION_TYPES) == set(QUESTION_TYPE_NAMES)
     assert QUESTION_TYPES["multiple"].content_key == "values"
@@ -44,7 +46,35 @@ def test_registry_flags():
     assert with_options == {"single", "select", "multiple"}
 
     assert QUESTION_TYPES["image"].condition_source is False
-    assert all(spec.condition_source for name, spec in QUESTION_TYPES.items() if name != "image")
+    # 分节说明块没有答案可比, 同样不能当条件依赖题
+    assert QUESTION_TYPES["section"].condition_source is False
+    assert all(
+        spec.condition_source
+        for name, spec in QUESTION_TYPES.items()
+        if name not in ("image", "section")
+    )
+
+
+def test_only_section_is_unanswerable():
+    """收不收答案是必填判定/内容校验/CSV 列/统计四处的共同开关, 标错一处就会连锁出错。"""
+    assert QUESTION_TYPES["section"].answerable is False
+    assert ANSWERABLE_TYPES == set(QUESTION_TYPE_NAMES) - {"section"}
+    assert all(spec.answerable for name, spec in QUESTION_TYPES.items() if name != "section")
+
+    assert is_answerable("section") is False
+    assert is_answerable("text") is True
+    # 认不出的题型按收答案处理: 存量数据里的未知题型不能被静默跳过
+    assert is_answerable("legacy_unknown") is True
+
+
+def test_section_never_blocks_a_submission():
+    """展示块不收答案: 校验放行、导出为空、也不该被判成"已作答"。"""
+    # content_key 是空串, 走的是全量回退键而不是 KeyError
+    assert is_answered("section", None) is False
+    assert is_answered("section", {}) is False
+    # 即便前端误传了内容, 校验也不能因此拒收整卷
+    validate_answer("section", {"text": "章节说明"}, {"max_length": 1}, None)
+    assert answer_to_cell("section", None, None) == ""
 
 
 def test_pattern_matches_exactly_registered_names():

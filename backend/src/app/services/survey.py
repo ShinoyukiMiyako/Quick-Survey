@@ -16,7 +16,7 @@ from app.schemas import (
     SubmissionCreate, SubmissionReview
 )
 from app.services.conditions import is_question_visible  # noqa: F401 供既有导入
-from app.services.question_types import answer_to_cell
+from app.services.question_types import answer_to_cell, is_answerable
 
 
 # 访问口令哈希算法标识与轮数: 现有依赖里没有 passlib/bcrypt, 为一个可选的问卷口令
@@ -139,7 +139,8 @@ def build_submissions_csv(survey, submissions) -> str:
     import csv
     import io
 
-    questions = sorted(survey.questions, key=lambda q: q.order)
+    # 分节说明块不收答案, 列进来只会多出一整列空白
+    questions = [q for q in sorted(survey.questions, key=lambda q: q.order) if is_answerable(q.type)]
     headers = ["提交ID", "提交时间", "玩家名", "QQ", "状态"] + [q.title for q in questions]
 
     buf = io.StringIO()

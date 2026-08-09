@@ -153,7 +153,8 @@ async def build_survey_analytics(db: AsyncSession, survey) -> dict:
         .where(Question.survey_id == survey.id)
         .order_by(Question.order.asc(), Question.id.asc())
     )
-    questions = list(question_result.scalars().all())
+    # 分节说明块不收答案, 统计里给它出一行"0 份作答"只会让人以为漏数据了
+    questions = [q for q in question_result.scalars().all() if question_types.is_answerable(q.type)]
 
     submission_result = await db.execute(
         select(Submission)

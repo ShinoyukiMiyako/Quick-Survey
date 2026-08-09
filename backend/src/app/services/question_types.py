@@ -10,16 +10,21 @@ from datetime import date
 
 @dataclass(frozen=True)
 class QuestionTypeSpec:
-    """一种题型的元信息: 决定答案主键、能否绑定系统字段、能否做条件依赖、是否必须配选项。"""
+    """一种题型的元信息: 决定答案主键、能否绑定系统字段、能否做条件依赖、是否必须配选项。
+
+    answerable=False 的是纯展示块 (分节标题), 它占一个题位、能配条件显示, 但不收答案 ——
+    必填判定、内容校验、CSV 列与统计都必须把它排除在外。
+    """
     type: str
     label: str
     content_key: str
     role_bindable: bool
     condition_source: bool
     needs_options: bool
+    answerable: bool = True
 
 
-# 字段顺序: type, label, content_key, role_bindable, condition_source, needs_options
+# 字段顺序: type, label, content_key, role_bindable, condition_source, needs_options[, answerable]
 QUESTION_TYPES: dict[str, QuestionTypeSpec] = {
     spec.type: spec
     for spec in (
@@ -34,10 +39,23 @@ QUESTION_TYPES: dict[str, QuestionTypeSpec] = {
         QuestionTypeSpec("rating", "评分题", "value", False, True, False),
         # 图片不参与条件比较: 路径字符串对玩家无语义, 拿来做分支只会误判
         QuestionTypeSpec("image", "图片题", "images", False, False, False),
+        # 分节说明块: 只渲染标题与说明, 不收答案。可以配条件显示 (按方向分支只亮出对应章节),
+        # 但不能作为条件依赖题 —— 它没有答案可比。
+        QuestionTypeSpec("section", "分节说明", "", False, False, False, answerable=False),
     )
 }
 
 QUESTION_TYPE_NAMES: tuple[str, ...] = tuple(QUESTION_TYPES)
+
+# 会收上来答案的题型。必填判定/内容校验/CSV 列/统计一律以此为准, 而不是逐处硬写 != "section":
+# 将来再加展示型题块 (分页符、富文本说明) 只需在注册表里标一次。
+ANSWERABLE_TYPES: frozenset[str] = frozenset(t for t, s in QUESTION_TYPES.items() if s.answerable)
+
+
+def is_answerable(qtype: str) -> bool:
+    """该题型是否收答案。认不出的题型按收答案处理, 避免历史数据被静默跳过。"""
+    spec = QUESTION_TYPES.get(qtype)
+    return spec.answerable if spec else True
 
 # 供 pydantic Field(pattern=...) 直接使用; 由注册表生成, 新增题型时不会漏改校验
 QUESTION_TYPE_PATTERN: str = "^(" + "|".join(QUESTION_TYPE_NAMES) + ")$"
@@ -68,7 +86,8 @@ def _raw_value(qtype: str, content: dict | None):
     if not isinstance(content, dict):
         return None
     spec = QUESTION_TYPES.get(qtype)
-    keys = _CONTENT_FALLBACK[spec.content_key] if spec else _UNKNOWN_FALLBACK
+    # 展示型题块的 content_key 是空串, 取不到回退表; 认不出的题型同样走全量回退键
+    keys = _CONTENT_FALLBACK.get(spec.content_key, _UNKNOWN_FALLBACK) if spec else _UNKNOWN_FALLBACK
     expects_list = spec is not None and spec.content_key in _LIST_CONTENT_KEYS
     for index, key in enumerate(keys):
         value = content.get(key)
@@ -192,8 +211,8 @@ def validate_answer(qtype: str, content: dict | None, validation: dict | None, o
     未知题型与不认识的 content 形态同样放行 —— 存量数据形态不一, 宁可漏判也不能把老数据卡死。
     """
     spec = QUESTION_TYPES.get(qtype)
-    if spec is None:
-        return
+    if spec is None or not spec.answerable:
+        return  # 展示型题块不收答案, 没有"内容合不合法"可言
     raw = _raw_value(qtype, content)
     if not _is_filled(raw):
         return

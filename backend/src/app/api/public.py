@@ -16,7 +16,7 @@ from app.services.survey import (
     is_question_visible,
     verify_access_password_async,
 )
-from app.services.question_types import answer_scalar, is_answered, validate_answer
+from app.services.question_types import answer_scalar, is_answerable, is_answered, validate_answer
 from app.services.mod_client import issue_registration_code as mod_issue_registration_code
 from app.core import (
     verify_turnstile,
@@ -318,9 +318,12 @@ async def submit_survey(
     # 对于随机问卷，前端只收到部分题目，无法在后端验证完整性
     if not survey.is_random:
         # 只检查可见的必填题 (condition.depends_on 语义=依赖题 question_id)
+        # is_answerable: 分节说明块不收答案, 万一被标成必填就会永远"缺答案", 整卷提交不了
         required_questions = {
             q.id for q in survey.questions
-            if q.is_required and is_question_visible(q.condition, answer_map, question_map)
+            if q.is_required
+            and is_answerable(q.type)
+            and is_question_visible(q.condition, answer_map, question_map)
         }
         # 只认"填了有效内容"的答案: 空 content / 空串 / 空数组一律不算作答,
         # 而判断题的 false 与数字题的 0 是有效答案, 交给 is_answered 按题型判定

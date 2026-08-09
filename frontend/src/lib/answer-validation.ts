@@ -8,8 +8,10 @@ import type { AnswerSubmit, Question, QuestionType, QuestionValidation } from '@
 type AnswerContent = AnswerSubmit['content']
 type ContentKey = keyof AnswerContent
 
-// 各题型的答案主键, 对应后端 QUESTION_TYPES 的 content_key
-const CONTENT_KEY: Record<QuestionType, ContentKey> = {
+// 各题型的答案主键, 对应后端 QUESTION_TYPES 的 content_key。
+// Partial: 分节说明块不收答案, 没有主键可言 —— 查不到主键的题型在 validateAnswer 开头就放行,
+// 与后端 `spec is None or not spec.answerable` 的提前返回对齐。
+const CONTENT_KEY: Partial<Record<QuestionType, ContentKey>> = {
   single: 'value',
   select: 'value',
   multiple: 'values',
@@ -125,6 +127,16 @@ function allowedOptionValues(options?: readonly unknown[] | null): Set<string> {
     allowed.add(String(value))
   }
   return allowed
+}
+
+// 不收答案的展示型题块, 对齐后端 QUESTION_TYPES 里 answerable=false 的项。
+// 刻意用排除法而不是"查得到 CONTENT_KEY 才算收答案": 认不出的题型后端按收答案处理,
+// 这里必须一致, 否则存量脏数据的题会在前端被悄悄跳过必填校验, 到后端才被 400 打回。
+const UNANSWERABLE_TYPES = new Set<QuestionType>(['section'])
+
+/** 该题是否收答案。分节说明块只渲染文字, 不参与必填判定、题号与答案收集。 */
+export function isAnswerableQuestion(question: Question): boolean {
+  return !UNANSWERABLE_TYPES.has(question.type)
 }
 
 /**

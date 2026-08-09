@@ -60,6 +60,8 @@ export type QuestionType =
   | 'date'
   | 'rating'
   | 'image'
+  // 分节说明块: 只渲染标题与说明, 不收答案 (后端 QUESTION_TYPES 里 answerable=false)
+  | 'section'
 
 // 问卷可填状态（后端 compute_availability 结果）
 export type AvailabilityState = 'open' | 'inactive' | 'unpublished' | 'not_started' | 'ended' | 'full'

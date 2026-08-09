@@ -28,7 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getSurveyByCode, submitSurvey, getSecurityConfig, unlockSurvey } from '@/lib/api'
 import { isAnswered, isQuestionVisible } from '@/lib/conditions'
-import { validateAnswer } from '@/lib/answer-validation'
+import { isAnswerableQuestion, validateAnswer } from '@/lib/answer-validation'
 import { saveSubmission } from '@/lib/submissions-storage'
 import type {
   AvailabilityState,
@@ -135,6 +135,19 @@ export function SurveyPage() {
       fetchData()
   }, [code])
 
+  // 题号只数收答案的题: 分节说明块占一页, 但玩家读到的不该是"第 3 题"。
+  // 进度条与步数仍按全部页算, 那是"走了多少步", 与题号是两回事。
+  const questionOrdinals = useMemo(() => {
+    const map = new Map<number, number>()
+    let ordinal = 0
+    for (const q of visibleQuestions) {
+      if (!isAnswerableQuestion(q)) continue
+      ordinal += 1
+      map.set(q.id, ordinal)
+    }
+    return map
+  }, [visibleQuestions])
+
   // 可见集合会随作答收缩 (改掉前置题把后面的题藏掉), currentIndex 不钳制就会越界;
   // 越界后 currentQuestion 为 undefined, 玩家被甩到"暂无可填写的题目"页, 已填答案全丢。
   // 渲染期直接修正 state (React 官方的 adjusting state 模式), 不放 useEffect: 后者会先提交一帧错误 UI。
@@ -185,8 +198,9 @@ export function SurveyPage() {
   const handleNext = () => {
     if (!survey || visibleQuestions.length === 0) return
 
-    // 检查必填
-    if (currentQuestion?.is_required && !isQuestionAnswered(currentQuestion)) {
+    // 检查必填。分节说明块不收答案, 万一被标成必填就会把玩家永久卡在这一页,
+    // 后端的必填判定同样按 is_answerable 把它排除在外。
+    if (currentQuestion && isAnswerableQuestion(currentQuestion) && currentQuestion.is_required && !isQuestionAnswered(currentQuestion)) {
       toast.error('请先完成当前问题')
       return
     }
@@ -203,7 +217,7 @@ export function SurveyPage() {
     if (isLastQuestion) {
       // 只检查可见的必填问题
       const unanswered = visibleQuestions.filter(
-        (q) => q.is_required && !isQuestionAnswered(q)
+        (q) => isAnswerableQuestion(q) && q.is_required && !isQuestionAnswered(q)
       )
       if (unanswered.length > 0) {
         toast.error(`还有 ${unanswered.length} 道必填题未完成`)
@@ -691,7 +705,8 @@ export function SurveyPage() {
               question={currentQuestion}
               value={answers.get(currentQuestion.id)}
               onChange={(content: AnswerSubmit['content']) => handleAnswerChange(currentQuestion.id, content)}
-              index={clampedIndex}
+              // QuestionCard 内渲染的是 index + 1, 故传"题号 - 1"; 分节块用不到这个值
+              index={(questionOrdinals.get(currentQuestion.id) ?? 1) - 1}
             />
           </motion.div>
         </AnimatePresence>

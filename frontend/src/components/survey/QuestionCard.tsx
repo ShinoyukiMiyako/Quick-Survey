@@ -27,6 +27,30 @@ interface QuestionCardProps {
 }
 
 export function QuestionCard({ question, value, onChange, index }: QuestionCardProps) {
+  // 分节说明块: 不收答案, 渲染成一页章节引导。走独立分支而不是塞进 renderQuestionContent,
+  // 是因为它连"第 N 题 / 必填"这些题目外壳都不该有。
+  if (question.type === 'section') {
+    return (
+      <Card className="rounded-3xl border-border/50 shadow-lg overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none" />
+        <CardHeader className="relative pb-4">
+          <Badge variant="secondary" className="w-fit rounded-full px-3 text-xs font-medium">
+            本节说明
+          </Badge>
+          <CardTitle className="mt-3 text-2xl leading-relaxed">{question.title}</CardTitle>
+        </CardHeader>
+        {question.description ? (
+          <CardContent className="relative pb-8 pt-0">
+            {/* 说明里常有换行分点, 保留原样排版 */}
+            <p className="whitespace-pre-wrap text-base leading-relaxed text-muted-foreground">
+              {question.description}
+            </p>
+          </CardContent>
+        ) : null}
+      </Card>
+    )
+  }
+
   const renderQuestionContent = () => {
     switch (question.type) {
       case 'single':
