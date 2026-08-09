@@ -72,24 +72,32 @@ async def get_notifications(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    """取待发送的审核群通知 (插件轮询消费)。"""
+    """取待发送的群通知 (插件轮询消费)。
+
+    每条自带 group_id 与 audience: 发去哪个群、@ 本人还是纯文本播报, 一律由后端裁决,
+    插件只按字段执行。插件重装要 patch NapCat 白名单并重启 (有丢登录态的风险), 决策留在
+    这边才能改一次配置就生效。
+    """
     items = await bot_notify.list_pending(db, limit)
-    return ApiResponse(
-        success=True,
-        data={
-            "notifications": [
-                {
-                    "id": n.id,
-                    "qq": n.qq,
-                    "type": n.type,
-                    "reason": n.reason,
-                    "submission_id": n.submission_id,
-                    "created_at": _iso_utc(n.created_at),
-                }
-                for n in items
-            ]
-        },
-    )
+    payload = []
+    for n in items:
+        submission = n.submission
+        survey = submission.survey if submission is not None else None
+        payload.append({
+            "id": n.id,
+            "qq": n.qq,
+            "type": n.type,
+            "reason": n.reason,
+            "submission_id": n.submission_id,
+            "created_at": _iso_utc(n.created_at),
+            # 投递目标群; null = 插件用自己配置的默认审核群
+            "group_id": survey.notify_group_id if survey is not None else None,
+            "audience": bot_notify.audience_of(survey),
+            # 管理向播报要在正文里点名是哪份卷、谁提交的 —— 管理群同时收多个招募表的通知
+            "survey_title": survey.title if survey is not None else None,
+            "player_name": submission.player_name if submission is not None else None,
+        })
+    return ApiResponse(success=True, data={"notifications": payload})
 
 
 @router.post("/notifications/{notification_id}/ack", response_model=ApiResponse)

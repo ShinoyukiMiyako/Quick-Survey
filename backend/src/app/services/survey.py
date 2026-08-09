@@ -176,7 +176,7 @@ _SURVEY_CREATE_PASSTHROUGH = frozenset({
     "starts_at", "ends_at", "max_submissions", "max_submissions_per_ip",
     "require_consent", "privacy_notice", "closed_message", "success_message",
     "review_required", "action_add_whitelist", "action_issue_code",
-    "action_notify_group", "action_webhook", "webhook_url",
+    "action_notify_group", "action_webhook", "webhook_url", "notify_group_id",
 })
 
 # 复制问卷时不沿用原卷的列: 身份(自己生成)、生命周期(副本一律停用草稿)、审计(记副本自己的)。

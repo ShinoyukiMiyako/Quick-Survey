@@ -52,6 +52,10 @@ class Survey(Base):
     action_notify_group: Mapped[bool] = mapped_column(Boolean, default=True)  # 提交/审核入审核群通知队列
     action_webhook: Mapped[bool] = mapped_column(Boolean, default=False)  # 提交后推送 webhook (best-effort, 失败不影响提交)
     webhook_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # webhook 目标地址
+    # 通知投递目标群。NULL=插件默认审核群 + 玩家向语义 (@ 提交者本人, 需其在群, 回填 in_review_group);
+    # 填了群号=管理向语义 (纯文本播报到该群, QQ 号原样写进正文, 不 @ 也不查成员资格)。
+    # 一个字段同时定"发去哪"和"给谁看": 会去指定某个群的场景就是运营/管理侧收件箱, 群里没有提交者本人。
+    notify_group_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
     # 开放窗口与配额 (NULL 一律表示"不限"; 是否可填由 compute_availability 统一裁决)
     starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # 开放开始时间 (naive UTC, 早于此刻不可填)

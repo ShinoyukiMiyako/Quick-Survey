@@ -198,6 +198,8 @@ class SurveyCreate(BaseModel):
     action_notify_group: Optional[bool] = None
     action_webhook: Optional[bool] = None
     webhook_url: Optional[str] = Field(None, max_length=512)
+    # 通知投递群号 (QQ 群号, 不传/null = 用插件默认审核群并 @ 提交者本人)
+    notify_group_id: Optional[int] = Field(None, ge=1)
     questions: list[QuestionCreate] = []
 
 
@@ -226,6 +228,8 @@ class SurveyUpdate(BaseModel):
     action_notify_group: Optional[bool] = None
     action_webhook: Optional[bool] = None
     webhook_url: Optional[str] = Field(None, max_length=512)
+    # 通知投递群号; 与下面的窗口/配额同理, 显式传 null 才是清空 (回退默认审核群)
+    notify_group_id: Optional[int] = Field(None, ge=1)
     # 开放窗口与提交配额。这几项要能被"清空": update_survey 用 exclude_unset 取差量,
     # 显式传 null 时键仍在 dump 里, 会把列置回 NULL(不限); 整个键不传才是保持原样。
     starts_at: Optional[datetime] = None

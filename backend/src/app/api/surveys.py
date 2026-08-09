@@ -90,6 +90,7 @@ def _survey_settings_payload(survey: Survey) -> dict:
         "success_message": survey.success_message,
         "action_webhook": survey.action_webhook,
         "webhook_url": survey.webhook_url,
+        "notify_group_id": survey.notify_group_id,
         "has_access_password": survey.access_password_hash is not None,
     }
 
