@@ -159,6 +159,13 @@ class Submission(Base):
     # 关系
     survey: Mapped["Survey"] = relationship("Survey", back_populates="submissions")
     answers: Mapped[list["Answer"]] = relationship("Answer", back_populates="submission", cascade="all, delete-orphan")
+    # 通知队列必须挂 relationship 才会跟着删: SQLite 默认不强制外键 (连接只设了 journal_mode
+    # 与 busy_timeout), 列上的 ondelete=CASCADE 根本不生效, 真正起作用的只有这里的 cascade。
+    # 漏掉就会留下指向已删提交的孤儿 —— list_pending 不联表, 插件照样把它取走并在审核群
+    # @ 人, 通知一份已经不存在的申请。
+    notifications: Mapped[list["BotNotification"]] = relationship(
+        "BotNotification", back_populates="submission", cascade="all, delete-orphan"
+    )
 
 
 class Answer(Base):
@@ -246,3 +253,6 @@ class BotNotification(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending / done
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # 关系 (供 Submission.notifications 的级联删除使用)
+    submission: Mapped["Submission"] = relationship("Submission", back_populates="notifications")

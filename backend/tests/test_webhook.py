@@ -219,4 +219,6 @@ async def test_dispatch_treats_all_2xx_as_success(monkeypatch, caplog, status_co
         _survey("https://hooks.example.com/inbox"), _submission(), _answers()
     )
 
-    assert caplog.text == ""
+    # 只看 webhook 自己的日志: caplog.text 是全局的, 别处 (如连接被 GC 回收时 SQLAlchemy
+    # 打的 ERROR) 飘来一条就会让这里假失败, 且只在全量跑时复现
+    assert [r for r in caplog.records if r.name == "app.services.webhook"] == []
