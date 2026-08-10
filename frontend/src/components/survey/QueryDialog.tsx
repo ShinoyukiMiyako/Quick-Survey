@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { StatusTimeline } from './StatusTimeline'
 import { querySubmissionStatus, redeemRegistrationCode } from '@/lib/api'
+import { REGISTRATION_CODE_ENABLED } from '@/lib/feature-flags'
 import {
   getStoredSubmissions,
   saveSubmission,
@@ -165,7 +166,7 @@ export function QueryDialog({ open, onOpenChange }: QueryDialogProps) {
             查询进度
           </DialogTitle>
           <DialogDescription>
-            输入提交成功后获得的查询凭据，查看审核状态并领取注册码
+            输入提交成功后获得的查询凭据，查看审核状态{REGISTRATION_CODE_ENABLED ? '并领取注册码' : ''}
           </DialogDescription>
         </DialogHeader>
 
@@ -247,8 +248,21 @@ export function QueryDialog({ open, onOpenChange }: QueryDialogProps) {
 
                     <StatusTimeline submission={submission} />
 
-                    {/* 领码区: 可领 -> 按钮; 刚领到 -> 展示码; 已领过 -> 提示 */}
-                    {codes[submission.token]?.registration_code ? (
+                    {/* 领码区: 可领 -> 按钮; 刚领到 -> 展示码; 已领过 -> 提示。
+                        注册码停用期间 (REGISTRATION_CODE_ENABLED=false) 整块短路, 过审只给进服指引 */}
+                    {!REGISTRATION_CODE_ENABLED ? (
+                      submission.status === 'approved' ? (
+                        <div className="mt-4 rounded-xl border border-primary/40 bg-primary/5 p-3">
+                          <p className="text-xs text-muted-foreground">
+                            审核已通过，<span className="font-medium text-foreground">直接进服即可，不需要注册码</span>。
+                            首次进入服务器后，在游戏里输入{' '}
+                            <span className="font-mono">/register 你的密码 你的密码</span>{' '}
+                            设置密码（同一个密码打两遍），之后每次进服用{' '}
+                            <span className="font-mono">/login 你的密码</span> 登录。
+                          </p>
+                        </div>
+                      ) : null
+                    ) : codes[submission.token]?.registration_code ? (
                       <div className="mt-4 rounded-xl border border-primary/40 bg-primary/5 p-3">
                         <p className="text-xs text-muted-foreground mb-2">
                           请在游戏内使用 <span className="font-mono">/register &lt;密码&gt; &lt;确认&gt; &lt;注册码&gt;</span> 完成注册。

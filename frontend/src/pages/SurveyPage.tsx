@@ -30,6 +30,7 @@ import { getSurveyByCode, submitSurvey, getSecurityConfig, unlockSurvey } from '
 import { isAnswered, isQuestionVisible } from '@/lib/conditions'
 import { isAnswerableQuestion, validateAnswer } from '@/lib/answer-validation'
 import { saveSubmission } from '@/lib/submissions-storage'
+import { REGISTRATION_CODE_ENABLED } from '@/lib/feature-flags'
 import type {
   AvailabilityState,
   PublicSurvey,
@@ -570,7 +571,7 @@ export function SurveyPage() {
               <div className="mb-8 text-left rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4">
                 <p className="text-sm font-medium mb-2">请妥善保存您的查询凭据</p>
                 <p className="text-xs text-muted-foreground mb-3">
-                  凭此凭据可查询审核进度{survey.issues_code ? '，并在通过后领取进服注册码' : ''}。本浏览器已自动记住，
+                  凭此凭据可查询审核进度{survey.issues_code && REGISTRATION_CODE_ENABLED ? '，并在通过后领取进服注册码' : ''}。本浏览器已自动记住，
                   但清除浏览器数据或更换设备后将丢失，建议另行保存。
                 </p>
                 <div className="flex gap-2">
