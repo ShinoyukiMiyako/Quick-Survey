@@ -170,7 +170,8 @@ async def test_dispatch_posts_contract_payload(monkeypatch):
         "player_name": "Alice",
         "qq": "10001",
         "status": "approved",
-        "created_at": "2026-08-06T12:30:00",
+        # 库内是 naive UTC, 出站必须带 +00:00, 否则接收端/前端会把 UTC 当本地时间读
+        "created_at": "2026-08-06T12:30:00+00:00",
     }
     assert payload["answers"] == [
         {"question_id": 3, "title": "留言", "type": "text", "content": {"text": "来了"}},

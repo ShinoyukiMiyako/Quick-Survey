@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.core.timefmt import iso_utc
+
 logger = logging.getLogger(__name__)
 
 EVENT_SUBMISSION_CREATED = "submission.created"
@@ -115,7 +117,7 @@ def _build_payload(survey, submission, answers: list) -> dict:
             "player_name": submission.player_name,
             "qq": submission.qq,
             "status": submission.status,
-            "created_at": submission.created_at.isoformat() if submission.created_at else None,
+            "created_at": iso_utc(submission.created_at),
         },
         "answers": answer_rows,
     }

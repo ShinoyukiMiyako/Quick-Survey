@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core import get_current_user, CurrentUser
+from app.core import get_current_user, CurrentUser, iso_utc
 from app.models import Survey
 from app.schemas import (
     ApiResponse,
@@ -80,8 +80,8 @@ def _survey_settings_payload(survey: Survey) -> dict:
     另: 口令哈希绝不出现在任何一份管理端响应里, 对外只暴露"有没有设口令"这一个布尔。
     """
     return {
-        "starts_at": survey.starts_at.isoformat() if survey.starts_at else None,
-        "ends_at": survey.ends_at.isoformat() if survey.ends_at else None,
+        "starts_at": iso_utc(survey.starts_at),
+        "ends_at": iso_utc(survey.ends_at),
         "max_submissions": survey.max_submissions,
         "max_submissions_per_ip": survey.max_submissions_per_ip,
         "require_consent": survey.require_consent,
@@ -164,8 +164,8 @@ async def get_surveys(
             **_survey_settings_payload(survey),
             "question_count": question_count,
             "submission_count": submission_count,
-            "created_at": survey.created_at.isoformat(),
-            "updated_at": survey.updated_at.isoformat(),
+            "created_at": iso_utc(survey.created_at),
+            "updated_at": iso_utc(survey.updated_at),
         })
 
     return ApiResponse(
@@ -260,8 +260,8 @@ async def get_survey(
                 }
                 for q in questions
             ],
-            "created_at": survey.created_at.isoformat(),
-            "updated_at": survey.updated_at.isoformat(),
+            "created_at": iso_utc(survey.created_at),
+            "updated_at": iso_utc(survey.updated_at),
         }
     )
 

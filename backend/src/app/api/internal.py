@@ -6,7 +6,6 @@
 - POST /internal/notifications/{id}/ack  插件回调: 标记已发, 回填 in_review_group
 """
 import secrets
-from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -20,15 +19,7 @@ from app.schemas import ApiResponse
 from app.services import SubmissionService
 from app.services import bot_notify
 from app.core.config import get_settings
-
-
-def _iso_utc(dt: Optional[datetime]) -> Optional[str]:
-    """datetime -> UTC ISO 字符串; naive 视为 UTC。供插件按北京时间展示。"""
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat()
+from app.core.timefmt import iso_utc
 
 
 async def require_internal_token(
@@ -89,7 +80,7 @@ async def get_notifications(
             "type": n.type,
             "reason": n.reason,
             "submission_id": n.submission_id,
-            "created_at": _iso_utc(n.created_at),
+            "created_at": iso_utc(n.created_at),
             # 投递目标群; null = 插件用自己配置的默认审核群
             "group_id": survey.notify_group_id if survey is not None else None,
             "audience": bot_notify.audience_of(survey),

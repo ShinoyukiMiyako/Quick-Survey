@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core import get_current_user, CurrentUser
+from app.core import get_current_user, CurrentUser, iso_utc
 from app.schemas import ApiResponse, SubmissionReview
 # BulkReviewRequest 未列进 app.schemas 的桶导出, 从定义模块直接取, 不依赖桶文件的更新
 from app.schemas.schemas import BulkReviewRequest
@@ -119,8 +119,8 @@ async def get_submissions(
             "qq": sub.qq,
             "status": sub.status,
             "in_review_group": sub.in_review_group,  # True/False/null, 面板标记"未在审核群"
-            "created_at": sub.created_at.isoformat(),
-            "reviewed_at": sub.reviewed_at.isoformat() if sub.reviewed_at else None,
+            "created_at": iso_utc(sub.created_at),
+            "reviewed_at": iso_utc(sub.reviewed_at),
         })
     
     return ApiResponse(
@@ -265,12 +265,12 @@ async def get_submission(
             "ip_address": submission.ip_address,
             "ip_location": resolve_ip_location(submission.ip_address),  # 离线 ip2region 解析, 无数据则 null
             "fill_duration": submission.fill_duration,  # 填写耗时
-            "first_viewed_at": submission.first_viewed_at.isoformat() if submission.first_viewed_at else None,  # 首次查看时间
+            "first_viewed_at": iso_utc(submission.first_viewed_at),  # 首次查看时间
             "status": submission.status,
             "review_note": submission.review_note,
             "answers": answers,
-            "created_at": submission.created_at.isoformat(),
-            "reviewed_at": submission.reviewed_at.isoformat() if submission.reviewed_at else None,
+            "created_at": iso_utc(submission.created_at),
+            "reviewed_at": iso_utc(submission.reviewed_at),
             "reviewed_by": submission.reviewed_by,
         }
     )

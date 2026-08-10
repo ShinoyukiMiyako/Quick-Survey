@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.core.timefmt import iso_utc
 from app.schemas import ApiResponse, SubmissionCreate, PublicSurveyResponse
 # SurveyUnlockRequest 未列进 app.schemas 的桶导出, 从定义模块直接取, 不依赖桶文件的更新
 from app.schemas.schemas import SurveyUnlockRequest
@@ -466,9 +467,9 @@ def _submission_status_dict(sub) -> dict:
         "status_text": status_text,
         # 时间线
         "timeline": {
-            "submitted_at": sub.created_at.isoformat() if sub.created_at else None,
-            "first_viewed_at": sub.first_viewed_at.isoformat() if sub.first_viewed_at else None,
-            "reviewed_at": sub.reviewed_at.isoformat() if sub.reviewed_at else None,
+            "submitted_at": iso_utc(sub.created_at),
+            "first_viewed_at": iso_utc(sub.first_viewed_at),
+            "reviewed_at": iso_utc(sub.reviewed_at),
         },
         # 填写耗时（格式化为分:秒）
         "fill_duration": _format_duration(sub.fill_duration) if sub.fill_duration else None,

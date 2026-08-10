@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
+from app.core.timefmt import iso_utc
 from app.models import Survey, Question, Submission, Answer
 from app.schemas import (
     SurveyCreate, SurveyUpdate, QuestionCreate, QuestionUpdate,
@@ -151,7 +152,7 @@ def build_submissions_csv(survey, submissions) -> str:
         amap = {a.question_id: a.content for a in sub.answers}
         row = [
             sub.id,
-            sub.created_at.isoformat() if sub.created_at else "",
+            iso_utc(sub.created_at) or "",
             sub.player_name or "",
             sub.qq or "",
             sub.status,

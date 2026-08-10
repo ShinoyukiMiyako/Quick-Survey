@@ -7,6 +7,7 @@ from app.core.security import (
     get_real_ip,
     get_security_config,
 )
+from app.core.timefmt import iso_utc
 from app.core.rate_limit import (
     check_ip_rate_limit,
     record_ip_submission,
@@ -36,4 +37,5 @@ __all__ = [
     "check_submit_time",
     "get_real_ip",
     "get_security_config",
+    "iso_utc",
 ]

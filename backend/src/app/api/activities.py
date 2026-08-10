@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.core import get_current_user, CurrentUser
+from app.core import get_current_user, CurrentUser, iso_utc
 from app.schemas import ApiResponse
 from app.services import ActivityService
 
@@ -36,7 +36,7 @@ async def get_activities(
                     "operator": log.operator,
                     "submission_id": log.submission_id,
                     "note": log.note,
-                    "created_at": log.created_at.isoformat() if log.created_at else None,
+                    "created_at": iso_utc(log.created_at),
                 }
                 for log in logs
             ],
