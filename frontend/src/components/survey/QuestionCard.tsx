@@ -7,14 +7,16 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import type { Question, AnswerSubmit } from '@/types/survey'
 import { ImageUploader } from './ImageUploader'
-
-// 玩家端没有 shadcn select 组件, 原生 <select> 按 Input 的视觉语言拉齐。
-// option 单独指定底色: 部分浏览器下拉项会继承控件的 bg-transparent, 深色模式下会白底白字。
-const NATIVE_SELECT_CLASS =
-  'border-input dark:bg-input/30 flex h-12 w-full cursor-pointer rounded-2xl border bg-transparent px-4 text-base shadow-xs outline-none transition-all duration-200 hover:border-primary/30 hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] [&>option]:bg-background [&>option]:text-foreground'
 
 // 输入类题型的统一提示文案样式, 与 text 题的字数计数保持一致
 const HINT_CLASS = 'text-sm text-muted-foreground mt-2'
@@ -87,19 +89,35 @@ export function QuestionCard({ question, value, onChange, index }: QuestionCardP
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <select
-              value={selected}
-              onChange={(e) => onChange(e.target.value === '' ? {} : { value: e.target.value })}
-              className={NATIVE_SELECT_CLASS}
+            <Select
+              value={selected || undefined}
+              onValueChange={(v) => onChange({ value: v })}
             >
-              <option value="">请选择...</option>
-              {question.options?.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <p className={HINT_CLASS}>共 {question.options?.length ?? 0} 个选项，请选择其一</p>
+              <SelectTrigger>
+                <SelectValue placeholder="请选择..." />
+              </SelectTrigger>
+              <SelectContent>
+                {question.options?.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className={cn(HINT_CLASS, 'flex items-center justify-between gap-3')}>
+              <span>共 {question.options?.length ?? 0} 个选项，请选择其一</span>
+              {/* 原生 select 靠"请选择..."那一项退回未答, Radix 的面板里没有空值项,
+                  选填题误选后必须另给一条清空的路, 否则只能刷新页面重填。 */}
+              {!question.is_required && selected ? (
+                <button
+                  type="button"
+                  onClick={() => onChange({})}
+                  className="text-muted-foreground hover:text-foreground shrink-0 underline underline-offset-4 transition-colors"
+                >
+                  清除选择
+                </button>
+              ) : null}
+            </div>
           </motion.div>
         )
       }
