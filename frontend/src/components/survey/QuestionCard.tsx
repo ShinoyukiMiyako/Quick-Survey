@@ -15,8 +15,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import type { Question, AnswerSubmit } from '@/types/survey'
+import type { Question, AnswerSubmit, UploadedAttachment } from '@/types/survey'
 import { ImageUploader } from './ImageUploader'
+import { FileUploader } from './FileUploader'
 
 // 输入类题型的统一提示文案样式, 与 text 题的字数计数保持一致
 const HINT_CLASS = 'text-sm text-muted-foreground mt-2'
@@ -26,9 +27,11 @@ interface QuestionCardProps {
   value?: AnswerSubmit['content']
   onChange: (content: AnswerSubmit['content']) => void
   index: number
+  // 站点级上传限制 (来自 /public/security-config), 只影响文件题的提示与预检
+  uploadLimits?: { maxFileSizeMb?: number; allowedExtensions?: string[] }
 }
 
-export function QuestionCard({ question, value, onChange, index }: QuestionCardProps) {
+export function QuestionCard({ question, value, onChange, index, uploadLimits }: QuestionCardProps) {
   // 分节说明块: 不收答案, 渲染成一页章节引导。走独立分支而不是塞进 renderQuestionContent,
   // 是因为它连"第 N 题 / 必填"这些题目外壳都不该有。
   if (question.type === 'section') {
@@ -357,6 +360,30 @@ export function QuestionCard({ question, value, onChange, index }: QuestionCardP
             />
           </motion.div>
         )
+
+      case 'file': {
+        // 题目配了扩展名就以题目为准 (如只收 .ysm), 没配则退回站点白名单 ——
+        // 两个都没有时不过滤, 让后端的上传端点去拒
+        const allowedExtensions =
+          question.validation?.allowed_extensions?.length
+            ? question.validation.allowed_extensions
+            : uploadLimits?.allowedExtensions ?? []
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <FileUploader
+              value={(value?.files as UploadedAttachment[]) || []}
+              onChange={(files: UploadedAttachment[]) => onChange({ files })}
+              maxFiles={question.validation?.max_files || 3}
+              allowedExtensions={allowedExtensions}
+              maxSizeMb={uploadLimits?.maxFileSizeMb ?? 50}
+            />
+          </motion.div>
+        )
+      }
 
       default:
         return <p className="text-muted-foreground">不支持的题目类型</p>

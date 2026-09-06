@@ -149,6 +149,23 @@ export async function uploadImage(file: File): Promise<UploadResponse> {
   }
 }
 
+// 文件题附件走独立端点: 后端对附件按扩展名白名单把关、体积上限比图片宽,
+// 且不做任何压缩转码 —— 模型包/存档必须原样落盘。
+export async function uploadAttachment(file: File): Promise<UploadResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const { data } = await http.post<ApiResponse<UploadResponse>>('/public/upload/file', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      // 附件比图片大得多 (模型包几十 MB), 弱网下 120s 也可能不够, 给到 5 分钟
+      timeout: 300000,
+    })
+    return unwrap(data, '上传失败，请重试')
+  } catch (err) {
+    throw toError(err, '上传失败，请重试')
+  }
+}
+
 // 后端返回的图片地址为相对路径 (/uploads/xxx), 拼成可直接用于 img src 的完整地址。
 // 已是绝对 http(s) 地址则原样返回。
 export function getImageUrl(url: string): string {

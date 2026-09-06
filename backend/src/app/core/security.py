@@ -198,4 +198,8 @@ def get_security_config() -> dict:
         "turnstile_enabled": settings.security.turnstile.enabled,
         "time_check_enabled": settings.security.time_check.enabled,
         "min_submit_time": settings.security.time_check.min_submit_time if settings.security.time_check.enabled else 0,
+        # 文件题的站点级上传限制: 前端据此渲染提示与选择框过滤, 真正把关仍在 /public/upload/file。
+        # 不下发就只能在前端硬写一份, 改了配置玩家会看到骗人的提示。
+        "max_file_size_mb": settings.upload.max_file_size_mb,
+        "allowed_file_extensions": settings.upload.allowed_file_extensions,
     }

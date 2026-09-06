@@ -183,3 +183,56 @@ async def test_cleanup_skips_pending_submission(tmp_path, monkeypatch):
     assert stats["images_cleared"] == 0
 
     await session.close()
+
+
+async def test_cleanup_clears_file_attachments(tmp_path, monkeypatch):
+    """文件题附件与图片同样要清: 模型包动辄几十 MB, 漏掉它清理任务等于白跑。"""
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    _patch_upload_dir(monkeypatch, upload_dir)
+
+    session = await _make_session(tmp_path)
+
+    survey = Survey(title="模型征集", code="filecleanup", is_active=True)
+    session.add(survey)
+    await session.commit()
+    await session.refresh(survey)
+
+    q_file = Question(survey_id=survey.id, title="上传模型", type="file", order=1)
+    session.add(q_file)
+    await session.commit()
+    await session.refresh(q_file)
+
+    sub = Submission(
+        survey_id=survey.id,
+        player_name="Bob",
+        status="rejected",
+        reviewed_at=datetime.now(timezone.utc),
+    )
+    session.add(sub)
+    await session.commit()
+    await session.refresh(sub)
+
+    (upload_dir / "model.ysm").write_bytes(b"x" * 16)
+    ans_file = Answer(
+        submission_id=sub.id,
+        question_id=q_file.id,
+        content={
+            "files": [
+                {"url": "/uploads/model.ysm", "name": "纸板狐.ysm", "size": 16},
+                # 形态不合法的条目不该让清理炸掉, 也不该被拿去拼路径
+                {"url": "/uploads/../escape"},
+            ]
+        },
+    )
+    session.add(ans_file)
+    await session.commit()
+
+    stats = await CleanupService.cleanup_reviewed_submissions(session)
+
+    assert not (upload_dir / "model.ysm").exists()
+    await session.refresh(ans_file)
+    assert ans_file.content == {"files": []}
+    assert stats["files_cleared"] == 2
+    assert stats["files_deleted"] == 1
+    assert stats["submissions_cleaned"] == 1

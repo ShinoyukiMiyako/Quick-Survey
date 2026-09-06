@@ -39,6 +39,9 @@ QUESTION_TYPES: dict[str, QuestionTypeSpec] = {
         QuestionTypeSpec("rating", "评分题", "value", False, True, False),
         # 图片不参与条件比较: 路径字符串对玩家无语义, 拿来做分支只会误判
         QuestionTypeSpec("image", "图片题", "images", False, False, False),
+        # 文件题: 收任意附件 (模型包/存档/日志), 答案存 [{"url","name","size"}]。
+        # 与图片题同理不作条件依赖; 也不可绑系统字段 —— 答案不是标量。
+        QuestionTypeSpec("file", "文件题", "files", False, False, False),
         # 分节说明块: 只渲染标题与说明, 不收答案。可以配条件显示 (按方向分支只亮出对应章节),
         # 但不能作为条件依赖题 —— 它没有答案可比。
         QuestionTypeSpec("section", "分节说明", "", False, False, False, answerable=False),
@@ -70,11 +73,21 @@ _CONTENT_FALLBACK: dict[str, tuple[str, ...]] = {
     "text": ("text", "value"),
     "values": ("values", "value"),
     "images": ("images", "value"),
+    # 文件题是平台化之后才加的, 库里不存在扁平写法的历史数据, 不给回退键
+    "files": ("files",),
 }
-_UNKNOWN_FALLBACK: tuple[str, ...] = ("value", "text", "values", "images")
-_LIST_CONTENT_KEYS = ("values", "images")
+_UNKNOWN_FALLBACK: tuple[str, ...] = ("value", "text", "values", "images", "files")
+_LIST_CONTENT_KEYS = ("values", "images", "files")
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# 上传附件的合法地址形态: 只认本站 /uploads/ 下的单层文件名。
+# 答案 content 是玩家直接 POST 上来的, 不卡形态就能伪造成 /uploads/../config.yml 或外站地址,
+# 让审核端点开一个任意路径的下载链接。
+_UPLOAD_URL_PATTERN = re.compile(r"^/uploads/[A-Za-z0-9._-]{1,128}$")
+
+# 一条文件答案里 name 的展示上限; 超长文件名会撑爆审核列表, 且没有保留价值
+_MAX_FILE_NAME_LENGTH = 255
 
 
 def _raw_value(qtype: str, content: dict | None):
@@ -176,6 +189,55 @@ def _option_entries(options: list | None) -> list[tuple[str, str]]:
         elif isinstance(opt, str):
             entries.append((opt, opt))
     return entries
+
+
+def _file_entry_url(entry) -> str:
+    """校验并取出一条文件答案的地址, 形态不对直接抛 ValueError (消息可展示给玩家)。
+
+    ".." 必须单独排除: 它整串都由合法字符组成, 正则拦不住, 但拼进 uploads 目录就是父目录。
+    """
+    if not isinstance(entry, dict):
+        raise ValueError("文件答案格式不正确, 请重新上传")
+    url = entry.get("url")
+    if not isinstance(url, str) or ".." in url or not _UPLOAD_URL_PATTERN.match(url):
+        raise ValueError("文件地址不合法, 请重新上传")
+    name = entry.get("name")
+    if name is not None and (not isinstance(name, str) or len(name) > _MAX_FILE_NAME_LENGTH):
+        raise ValueError("文件名不合法, 请重命名后重试")
+    return url
+
+
+def _file_entry_text(entry) -> str:
+    """把一条文件答案压成可展示文本: 优先原始文件名, 缺失时退回存储地址。"""
+    if not isinstance(entry, dict):
+        return _scalar_text(entry)
+    name = entry.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    url = entry.get("url")
+    return url if isinstance(url, str) else ""
+
+
+def _normalized_extensions(raw) -> set[str]:
+    """题目配置的扩展名白名单归一化为小写带点集合; 没配或配空返回空集 (即不限制)。"""
+    if not isinstance(raw, list):
+        return set()
+    result = set()
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        ext = item.strip().lower()
+        if not ext:
+            continue
+        result.add(ext if ext.startswith(".") else f".{ext}")
+    return result
+
+
+def _url_extension(url: str) -> str:
+    """取地址末段的扩展名 (小写带点); 无扩展名返回空串。"""
+    tail = url.rsplit("/", 1)[-1]
+    dot = tail.rfind(".")
+    return tail[dot:].lower() if dot > 0 else ""
 
 
 def _boolean_cell(raw) -> str:
@@ -297,6 +359,40 @@ def validate_answer(qtype: str, content: dict | None, validation: dict | None, o
             raise ValueError(f"最多上传 {max_images} 张图片")
         return
 
+    if qtype == "file":
+        if not isinstance(raw, list):
+            raise ValueError("文件答案格式不正确")
+        max_files = _as_int(rules.get("max_files")) or 3
+        if len(raw) > max_files:
+            raise ValueError(f"最多上传 {max_files} 个文件")
+        allowed = _normalized_extensions(rules.get("allowed_extensions"))
+        for entry in raw:
+            url = _file_entry_url(entry)
+            # 白名单在上传端点已按站点配置卡过一道, 这里卡的是本题的更严要求 (如只收 .ysm)。
+            # 认地址上的扩展名而不是 name: 落盘文件名才是审核端真正下载到的东西。
+            if allowed and _url_extension(url) not in allowed:
+                raise ValueError("文件类型不符合要求, 仅接受 " + " / ".join(sorted(allowed)))
+        return
+
+
+def attachment_urls(content: dict | None, key: str) -> list[str]:
+    """取出答案里引用的上传地址; 只认 /uploads/ 下的合法单层路径, 其余条目跳过。
+
+    key 传 "images" (图片题, 存字符串) 或 "files" (文件题, 存 {url,name,size} 对象)。
+    清理任务与提交时的存在性校验共用这一处解析: 两边各写一份迟早在形态上分叉。
+    """
+    if not isinstance(content, dict):
+        return []
+    raw = content.get(key)
+    if not isinstance(raw, list):
+        return []
+    urls: list[str] = []
+    for entry in raw:
+        url = entry.get("url") if isinstance(entry, dict) else entry
+        if isinstance(url, str) and ".." not in url and _UPLOAD_URL_PATTERN.match(url):
+            urls.append(url)
+    return urls
+
 
 def answer_scalar(qtype: str, content: dict | None) -> str | None:
     """抽取可绑定 player_name/qq 的标量答案; 非绑定题型一律 None, 避免把多选/图片塞进系统字段。"""
@@ -319,6 +415,9 @@ def comparable_value(qtype: str, content: dict | None) -> str | list[str] | None
     if not _is_filled(raw):
         return None
     if isinstance(raw, list):
+        # 文件题的条目是对象, str(dict) 出来的是一坨 Python 字面量, 统一按文件名取文本
+        if qtype == "file":
+            return [_file_entry_text(item) for item in raw if _is_filled(item)]
         return [_scalar_text(item) for item in raw if _is_filled(item)]
     return _scalar_text(raw)
 
@@ -334,6 +433,9 @@ def answer_to_cell(qtype: str, content: dict | None, options: list | None = None
         return ""
     if qtype == "boolean":
         return _boolean_cell(raw)
+    if qtype == "file":
+        # 导出给人看的是原始文件名, 不是 uuid 存储名
+        return ", ".join(_file_entry_text(item) for item in raw) if isinstance(raw, list) else ""
     labels = dict(_option_entries(options))
     if isinstance(raw, list):
         return ", ".join(labels.get(_scalar_text(item), _scalar_text(item)) for item in raw)

@@ -83,16 +83,29 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | GET | `/api/v1/public/surveys/{code}` | 获取问卷（通过短码） |
 | POST | `/api/v1/public/surveys/{code}/submit` | 提交问卷 |
 | POST | `/api/v1/public/upload` | 上传图片 |
+| POST | `/api/v1/public/upload/file` | 上传文件题附件 |
 
 ## 题型说明
+
+题型的唯一事实源是 `backend/src/app/services/question_types.py` 的注册表，新增题型只在那里登记一次。
 
 | 类型 | 说明 | 答案格式 |
 |------|------|----------|
 | `single` | 单选题 | `{"value": "A"}` |
+| `select` | 下拉单选 | `{"value": "A"}` |
 | `multiple` | 多选题 | `{"values": ["A", "B"]}` |
 | `boolean` | 判断题 | `{"value": true}` |
-| `text` | 简答题 | `{"text": "答案内容"}` |
+| `text` | 多行文本 | `{"text": "答案内容"}` |
+| `short_text` | 单行文本 | `{"text": "答案内容"}` |
+| `number` | 数字题 | `{"value": 42}` |
+| `date` | 日期题 | `{"value": "2026-09-06"}` |
+| `rating` | 评分题 | `{"value": 5}` |
 | `image` | 图片上传 | `{"images": ["/uploads/xxx.jpg"]}` |
+| `file` | 文件上传 | `{"files": [{"url": "/uploads/xxx.ysm", "name": "模型.ysm", "size": 1024}]}` |
+| `section` | 分节说明（不收答案） | 无 |
+
+文件题按扩展名白名单把关（`upload.allowed_file_extensions`），单题可用 `validation.allowed_extensions`
+进一步收窄；体积上限走 `upload.max_file_size_mb`，与图片的 `max_size_mb` 分开配。
 
 ## 目录结构
 

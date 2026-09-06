@@ -54,6 +54,9 @@ class QuestionValidationSchema(BaseModel):
     min_length: Optional[int] = None  # text / short_text 最少字数 (按去首尾空白后的长度算)
     max_length: Optional[int] = None  # text / short_text 最多字数
     max_images: Optional[int] = None  # image 最多张数
+    max_files: Optional[int] = None  # file 最多个数, 缺省 3
+    # file 允许的扩展名 (小写带点, 如 [".ysm", ".zip"]); 不配则只受站点级白名单约束
+    allowed_extensions: Optional[list[str]] = None
     min_value: Optional[float] = None  # number 下限 (闭区间)
     max_value: Optional[float] = None  # number 上限 (闭区间)
     max_rating: Optional[int] = None  # rating 满分, 缺省按 5 分制

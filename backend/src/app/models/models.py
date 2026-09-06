@@ -93,7 +93,7 @@ class Question(Base):
     # 题目内容
     title: Mapped[str] = mapped_column(Text, nullable=False)  # 题目标题
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # 题目描述
-    type: Mapped[str] = mapped_column(String(20), nullable=False)  # 类型: single, multiple, boolean, text, image
+    type: Mapped[str] = mapped_column(String(20), nullable=False)  # 类型: 见 services/question_types.py 注册表 (single/multiple/text/image/file/section ...)
     
     # 选项 (JSON 数组，用于单选/多选题)
     # 格式: [{"value": "A", "label": "选项A"}, ...]
@@ -105,7 +105,7 @@ class Question(Base):
     order: Mapped[int] = mapped_column(Integer, default=0)  # 排序
     
     # 验证规则 (JSON)
-    # 格式: {"min_length": 10, "max_length": 500, "max_images": 3}
+    # 格式: {"min_length": 10, "max_length": 500, "max_images": 3, "max_files": 1, "allowed_extensions": [".ysm"]}
     validation: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     
     # 条件显示规则 (JSON)
@@ -185,7 +185,8 @@ class Answer(Base):
     # 多选: {"values": ["A", "B"]}
     # 判断: {"value": true}
     # 文本: {"text": "..."}
-    # 图片: {"images": ["upload/xxx.jpg", ...]}
+    # 图片: {"images": ["/uploads/xxx.jpg", ...]}
+    # 文件: {"files": [{"url": "/uploads/xxx.ysm", "name": "原始文件名.ysm", "size": 1024}, ...]}
     content: Mapped[dict] = mapped_column(JSON, nullable=False)
     
     # 时间戳

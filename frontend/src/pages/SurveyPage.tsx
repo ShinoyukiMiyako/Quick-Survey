@@ -708,6 +708,10 @@ export function SurveyPage() {
               onChange={(content: AnswerSubmit['content']) => handleAnswerChange(currentQuestion.id, content)}
               // QuestionCard 内渲染的是 index + 1, 故传"题号 - 1"; 分节块用不到这个值
               index={(questionOrdinals.get(currentQuestion.id) ?? 1) - 1}
+              uploadLimits={{
+                maxFileSizeMb: securityConfig?.max_file_size_mb,
+                allowedExtensions: securityConfig?.allowed_file_extensions,
+              }}
             />
           </motion.div>
         </AnimatePresence>

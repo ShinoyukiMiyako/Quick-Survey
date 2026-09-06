@@ -18,6 +18,7 @@ from sqlalchemy.orm import selectinload
 from app.db import async_session_maker
 from app.models import Submission, Answer, UploadedFile
 from app.core.config import get_settings
+from app.services.question_types import attachment_urls
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ class CleanupService:
         stats = {
             "submissions_cleaned": 0,
             "images_cleared": 0,
+            "files_cleared": 0,
             "files_deleted": 0,
             "bytes_freed": 0,
         }
@@ -69,31 +71,35 @@ class CleanupService:
 
             for answer in submission.answers:
                 content = answer.content or {}
-                images = content.get("images", [])
-                # 已清理过(或非图片题)的答案没有图片引用, 跳过 -> 任务对已处理提交幂等
-                if not images:
-                    continue
+                # 答案里引用上传文件的有两处: 图片题的 images (字符串数组) 与文件题的 files
+                # (对象数组)。附件动辄几十 MB, 只清图片等于清理任务对文件题白跑。
+                new_content = None
 
-                for image_path in images:
-                    # 图片路径格式: /uploads/xxx.jpg
-                    filename = image_path.replace("/uploads/", "")
-                    file_path = upload_dir / filename
+                for key, stat_key in (("images", "images_cleared"), ("files", "files_cleared")):
+                    refs = content.get(key) or []
+                    # 已清理过(或该答案不是这个题型)的没有引用, 跳过 -> 任务对已处理提交幂等
+                    if not refs:
+                        continue
 
-                    if file_path.exists():
-                        try:
-                            file_size = file_path.stat().st_size
-                            os.remove(file_path)
-                            stats["files_deleted"] += 1
-                            stats["bytes_freed"] += file_size
-                        except Exception:
-                            logger.exception("[Cleanup] 删除答案附图失败: %s", file_path)
+                    for url in attachment_urls(content, key):
+                        file_path = upload_dir / url.rsplit("/", 1)[-1]
+                        if file_path.exists():
+                            try:
+                                file_size = file_path.stat().st_size
+                                os.remove(file_path)
+                                stats["files_deleted"] += 1
+                                stats["bytes_freed"] += file_size
+                            except Exception:
+                                logger.exception("[Cleanup] 删除答案附件失败: %s", file_path)
 
-                # 清空图片引用但保留答案行。JSON 列须整体重新赋值, SQLAlchemy 才会标记为脏并落库。
-                new_content = dict(content)
-                new_content["images"] = []
-                answer.content = new_content
-                stats["images_cleared"] += len(images)
-                submission_touched = True
+                    # 清空引用但保留答案行。JSON 列须整体重新赋值, SQLAlchemy 才会标记为脏并落库。
+                    new_content = dict(new_content if new_content is not None else content)
+                    new_content[key] = []
+                    stats[stat_key] += len(refs)
+
+                if new_content is not None:
+                    answer.content = new_content
+                    submission_touched = True
 
             if submission_touched:
                 stats["submissions_cleaned"] += 1
@@ -148,16 +154,16 @@ class CleanupService:
             result = await db.execute(query)
             db_filenames = set(row[0] for row in result.fetchall())
             
-            # 同时从答案中获取引用的图片
+            # 同时从答案中获取引用的附件 (图片题 images + 文件题 files):
+            # 被答案引用的文件哪怕 uploaded_files 里没记录, 也不能当孤儿删掉
             answer_query = select(Answer.content)
             answer_result = await db.execute(answer_query)
-            
+
             for row in answer_result.fetchall():
                 content = row[0] or {}
-                images = content.get("images", [])
-                for image_path in images:
-                    filename = image_path.replace("/uploads/", "")
-                    db_filenames.add(filename)
+                for key in ("images", "files"):
+                    for url in attachment_urls(content, key):
+                        db_filenames.add(url.rsplit("/", 1)[-1])
         
         # 遍历上传目录
         for file_path in upload_dir.iterdir():
@@ -193,6 +199,7 @@ class CleanupService:
         total_stats = {
             "submissions_cleaned": 0,
             "images_cleared": 0,
+            "files_cleared": 0,
             "files_deleted": 0,
             "orphan_files_deleted": 0,
             "bytes_freed": 0,
@@ -222,6 +229,7 @@ class CleanupService:
             print(f"[Cleanup] 清理完成:")
             print(f"  - 清理提交: {total_stats['submissions_cleaned']}")
             print(f"  - 清空图片引用: {total_stats['images_cleared']}")
+            print(f"  - 清空附件引用: {total_stats['files_cleared']}")
             print(f"  - 删除文件: {total_stats['files_deleted']}")
             print(f"  - 孤立文件: {total_stats['orphan_files_deleted']}")
             print(f"  - 释放空间: {freed_str}")

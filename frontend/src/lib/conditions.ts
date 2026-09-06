@@ -100,6 +100,8 @@ function isAnsweredByType(qtype: QuestionType, content?: AnswerContent | null): 
       return typeof content.text === 'string' && content.text.trim() !== ''
     case 'image':
       return Array.isArray(content.images) && content.images.length > 0
+    case 'file':
+      return Array.isArray(content.files) && content.files.length > 0
     default:
       return false
   }
@@ -127,7 +129,7 @@ function listText(raw?: unknown[] | null): string[] | null {
 /**
  * 取出用于条件比较的值。boolean 归一化为小写 'true'/'false' ——
  * 这是修复"后端 str(True)=='True' 与编辑器写入的 show_when 'true' 永不相等"的关键点。
- * multiple/image 返回字符串数组, 其余返回字符串, 未作答返回 null。
+ * multiple/image/file 返回字符串数组, 其余返回字符串, 未作答返回 null。
  */
 function comparableValue(qtype: QuestionType, content?: AnswerContent | null): string | string[] | null {
   if (!isAnsweredByType(qtype, content) || !content) return null
@@ -139,6 +141,9 @@ function comparableValue(qtype: QuestionType, content?: AnswerContent | null): s
       // image 在后端 condition_source 为 false, 不该被引用为依赖题;
       // 这里仍返回非 null, 保证误配时 answered/not_answered 的判定不反过来
       return listText(content.images)
+    case 'file':
+      // 同 image: 不该作依赖题, 但误配时也要能答出"答没答"; 取原始文件名而不是存储地址
+      return listText((content.files ?? []).map((f) => f?.name || f?.url))
     case 'boolean':
       return content.value === true ? 'true' : 'false'
     case 'text':

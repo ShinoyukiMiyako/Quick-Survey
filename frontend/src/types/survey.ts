@@ -9,6 +9,8 @@ export interface QuestionValidation {
   min_length?: number
   max_length?: number
   max_images?: number
+  max_files?: number          // file 题最多个数，缺省 3
+  allowed_extensions?: string[] // file 题允许的扩展名（小写带点，如 [".ysm"]）
   min_value?: number   // number 题下限（闭区间）
   max_value?: number   // number 题上限（闭区间）
   max_rating?: number  // rating 题满分，缺省 5
@@ -60,6 +62,7 @@ export type QuestionType =
   | 'date'
   | 'rating'
   | 'image'
+  | 'file'
   // 分节说明块: 只渲染标题与说明, 不收答案 (后端 QUESTION_TYPES 里 answerable=false)
   | 'section'
 
@@ -121,6 +124,14 @@ export interface SurveyListItem {
   locked: boolean
 }
 
+// 一个已上传的附件（文件题答案条目）。原始文件名必须随答案一起存：
+// 落盘名是 uuid，审核端只看存储名等于什么都看不出来。
+export interface UploadedAttachment {
+  url: string   // /uploads/xxx.ysm
+  name: string  // 玩家侧的原始文件名
+  size: number  // 字节
+}
+
 // 答案提交
 export interface AnswerSubmit {
   question_id: number
@@ -129,6 +140,7 @@ export interface AnswerSubmit {
     values?: string[] // 多选
     text?: string // 简答、单行文本
     images?: string[] // 图片上传
+    files?: UploadedAttachment[] // 文件上传
   }
 }
 
@@ -149,6 +161,9 @@ export interface SecurityConfig {
   turnstile_enabled: boolean
   time_check_enabled: boolean
   min_submit_time: number
+  // 文件题的站点级上传限制 (旧后端不下发, 前端按缺省值兜底)
+  max_file_size_mb?: number
+  allowed_file_extensions?: string[]
 }
 
 // API 响应

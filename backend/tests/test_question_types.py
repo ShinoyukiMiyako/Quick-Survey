@@ -14,6 +14,7 @@ from app.services.question_types import (
     QUESTION_TYPE_PATTERN,
     answer_scalar,
     answer_to_cell,
+    attachment_urls,
     comparable_value,
     is_answerable,
     is_answered,
@@ -29,11 +30,12 @@ def test_registry_covers_all_names():
     # 顺序也锁死: 前端 QuestionType 联合类型与 QUESTION_TYPE_PATTERN 都按这个次序对齐
     assert QUESTION_TYPE_NAMES == (
         "single", "select", "multiple", "boolean", "text",
-        "short_text", "number", "date", "rating", "image", "section",
+        "short_text", "number", "date", "rating", "image", "file", "section",
     )
     assert set(QUESTION_TYPES) == set(QUESTION_TYPE_NAMES)
     assert QUESTION_TYPES["multiple"].content_key == "values"
     assert QUESTION_TYPES["image"].content_key == "images"
+    assert QUESTION_TYPES["file"].content_key == "files"
     assert QUESTION_TYPES["short_text"].content_key == "text"
     assert QUESTION_TYPES["rating"].label == "评分题"
 
@@ -46,12 +48,14 @@ def test_registry_flags():
     assert with_options == {"single", "select", "multiple"}
 
     assert QUESTION_TYPES["image"].condition_source is False
+    # 文件题与图片题同理: 存储路径对玩家无语义, 拿来做分支只会误判
+    assert QUESTION_TYPES["file"].condition_source is False
     # 分节说明块没有答案可比, 同样不能当条件依赖题
     assert QUESTION_TYPES["section"].condition_source is False
     assert all(
         spec.condition_source
         for name, spec in QUESTION_TYPES.items()
-        if name not in ("image", "section")
+        if name not in ("image", "file", "section")
     )
 
 
@@ -179,6 +183,70 @@ def test_validate_image_count_limit():
         validate_answer("image", {"images": [f"/uploads/{i}.jpg" for i in range(6)]}, None, None)
 
 
+def test_validate_file_count_limit():
+    entry = {"url": "/uploads/20260906_a.ysm", "name": "纸板狐.ysm", "size": 1024}
+    validate_answer("file", {"files": [entry]}, {"max_files": 1}, None)
+    with pytest.raises(ValueError, match="最多上传 1 个"):
+        validate_answer("file", {"files": [entry, entry]}, {"max_files": 1}, None)
+    # 缺省上限 3
+    validate_answer("file", {"files": [entry] * 3}, None, None)
+    with pytest.raises(ValueError, match="最多上传 3 个"):
+        validate_answer("file", {"files": [entry] * 4}, None, None)
+
+
+def test_validate_file_extension_whitelist():
+    """题目配的扩展名白名单认落盘地址的后缀, 不认玩家自报的 name。"""
+    validate_answer(
+        "file",
+        {"files": [{"url": "/uploads/a.ysm", "name": "模型.ysm"}]},
+        {"allowed_extensions": ["ysm", ".ZIP"]},
+        None,
+    )
+    with pytest.raises(ValueError, match="仅接受"):
+        validate_answer(
+            "file",
+            {"files": [{"url": "/uploads/a.exe", "name": "伪装成.ysm"}]},
+            {"allowed_extensions": [".ysm"]},
+            None,
+        )
+    # 不配白名单则不限扩展名 (只受站点级上传白名单约束)
+    validate_answer("file", {"files": [{"url": "/uploads/a.log"}]}, None, None)
+
+
+def test_validate_file_rejects_forged_paths():
+    """content 是玩家直接 POST 的, 地址形态必须卡死, 否则审核端会点开一个任意路径下载链接。"""
+    for bad in (
+        "https://evil.example.com/x.ysm",
+        "/uploads/../config.yml",
+        "/uploads/sub/dir.ysm",
+        "/etc/passwd",
+    ):
+        with pytest.raises(ValueError, match="地址不合法"):
+            validate_answer("file", {"files": [{"url": bad}]}, None, None)
+    # 条目必须是对象; 裸字符串是旧图片题的写法, 文件题不收
+    with pytest.raises(ValueError, match="格式不正确"):
+        validate_answer("file", {"files": ["/uploads/a.ysm"]}, None, None)
+    with pytest.raises(ValueError, match="文件名不合法"):
+        validate_answer("file", {"files": [{"url": "/uploads/a.ysm", "name": "x" * 256}]}, None, None)
+
+
+def test_attachment_urls_filters_illegal_entries():
+    content = {
+        "files": [
+            {"url": "/uploads/ok.ysm"},
+            {"url": "/uploads/../escape"},
+            {"url": "https://evil.example.com/x.ysm"},
+            {"name": "没有地址"},
+            "裸字符串",
+        ],
+        "images": ["/uploads/a.jpg", "https://evil.example.com/b.jpg"],
+    }
+    assert attachment_urls(content, "files") == ["/uploads/ok.ysm"]
+    assert attachment_urls(content, "images") == ["/uploads/a.jpg"]
+    assert attachment_urls(None, "files") == []
+    assert attachment_urls({"files": "不是数组"}, "files") == []
+
+
 def test_validate_skips_empty_and_unrecognized_shapes():
     # 空内容一律放行: 必填与否由调用方判定
     validate_answer("rating", None, None, None)
@@ -272,3 +340,18 @@ def test_answer_scalar_only_for_role_bindable_types():
     assert answer_scalar("image", {"images": ["/uploads/a.jpg"]}) is None
     assert answer_scalar("text", {"text": "   "}) is None
     assert answer_scalar("text", None) is None
+
+
+def test_file_answer_reading():
+    """文件题一条答案在"已答判定/导出/比较值/系统字段抽取"四处的读法。"""
+    entry = {"url": "/uploads/20260906_a.ysm", "name": "纸板狐.ysm", "size": 1024}
+
+    assert is_answered("file", {"files": []}) is False
+    assert is_answered("file", {"files": [entry]}) is True
+
+    # 导出给人看的是原始文件名, 不是 uuid 存储名; 没带 name 的退回地址
+    assert answer_to_cell("file", {"files": [entry, {"url": "/uploads/b.zip"}]}) == "纸板狐.ysm, /uploads/b.zip"
+    # 条目是对象, 不能被 str(dict) 成一坨 Python 字面量
+    assert comparable_value("file", {"files": [entry]}) == ["纸板狐.ysm"]
+    # 答案不是标量, 绑玩家名/QQ 一律抽不出
+    assert answer_scalar("file", {"files": [entry]}) is None

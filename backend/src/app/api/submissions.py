@@ -44,6 +44,7 @@ async def run_cleanup(
         data={
             "submissions_cleaned": stats["submissions_cleaned"],
             "images_cleared": stats["images_cleared"],
+            "files_cleared": stats["files_cleared"],
             "files_deleted": stats["files_deleted"],
             "orphan_files_deleted": stats["orphan_files_deleted"],
             "space_freed": freed_str,

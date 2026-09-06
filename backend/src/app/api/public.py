@@ -2,9 +2,11 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.models import UploadedFile
 from app.core.timefmt import iso_utc
 from app.schemas import ApiResponse, SubmissionCreate, PublicSurveyResponse
 # SurveyUnlockRequest 未列进 app.schemas 的桶导出, 从定义模块直接取, 不依赖桶文件的更新
@@ -17,7 +19,13 @@ from app.services.survey import (
     is_question_visible,
     verify_access_password_async,
 )
-from app.services.question_types import answer_scalar, is_answerable, is_answered, validate_answer
+from app.services.question_types import (
+    answer_scalar,
+    attachment_urls,
+    is_answerable,
+    is_answered,
+    validate_answer,
+)
 from app.services.mod_client import issue_registration_code as mod_issue_registration_code
 from app.core import (
     verify_turnstile,
@@ -315,6 +323,24 @@ async def submit_survey(
             # 长问卷里只回一句原因等于让玩家逐题猜, 必须把题目标题拼进去
             raise HTTPException(status_code=400, detail=f"「{question.title}」{exc}")
 
+    # 文件题引用的附件必须真在本站上传过: 地址形态由 validate_answer 卡住, 但形态合法不等于
+    # 文件存在 —— 玩家手改 content 就能提交一条永远 404 的下载链接, 审核端点开才发现。
+    referenced = {
+        url
+        for answer in data.answers
+        if question_map[answer.question_id].type == "file"
+        for url in attachment_urls(answer.content, "files")
+    }
+    if referenced:
+        stored_names = {url.rsplit("/", 1)[-1] for url in referenced}
+        known = await db.execute(
+            select(UploadedFile.stored_name).where(UploadedFile.stored_name.in_(stored_names))
+        )
+        missing = stored_names - set(known.scalars().all())
+        if missing:
+            logger.warning(f"[Submit] 附件不存在: code={code}, 缺失 {sorted(missing)}")
+            raise HTTPException(status_code=400, detail="附件已失效, 请重新上传后再提交")
+
     # 检查必填问题（考虑条件题逻辑）
     # 对于随机问卷，前端只收到部分题目，无法在后端验证完整性
     if not survey.is_random:
@@ -439,6 +465,36 @@ async def upload_file(
     # 记录上传
     await record_ip_upload(ip_address)
     
+    return ApiResponse(
+        success=True,
+        data={
+            "filename": uploaded.filename,
+            "stored_name": uploaded.stored_name,
+            "url": FileService.get_file_url(uploaded.stored_name),
+            "size": uploaded.file_size,
+            "mime_type": uploaded.mime_type,
+        }
+    )
+
+
+@router.post("/upload/file", response_model=ApiResponse)
+async def upload_attachment(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """上传文件题附件（公开）。
+
+    与 /upload 分开是因为准入规则不同: 附件按扩展名白名单把关、体积上限更宽。
+    限流复用图片那一套 per-IP 计数 —— 对外都是"往服务器写盘"这一件事。
+    """
+    ip_address = get_real_ip(request)
+    await check_upload_rate_limit(ip_address)
+
+    uploaded = await FileService.save_attachment(db, file)
+
+    await record_ip_upload(ip_address)
+
     return ApiResponse(
         success=True,
         data={

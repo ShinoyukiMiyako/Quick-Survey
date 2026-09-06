@@ -39,10 +39,20 @@ class UploadSettings(BaseSettings):
     path: str = "./uploads"
     allowed_types: list[str] = ["image/jpeg", "image/png", "image/gif", "image/webp"]
     max_size_mb: int = 10
-    
+    # 文件题的扩展名白名单 (小写带点)。按扩展名而不是 MIME 把关: .ysm/.zip 这类附件浏览器
+    # 一律报 application/octet-stream, MIME 白名单等于全放行。
+    # 严禁放开 .html/.htm/.svg/.xhtml: /uploads 与站点同源静态托管, 放进来就是存储型 XSS。
+    allowed_file_extensions: list[str] = [".ysm", ".zip", ".7z", ".rar", ".json", ".txt", ".log", ".pdf"]
+    # 文件题单个附件上限, 与图片分开: 模型包动辄几十 MB, 用图片的 10MB 卡会全上传不了
+    max_file_size_mb: int = 50
+
     @property
     def max_size_bytes(self) -> int:
         return self.max_size_mb * 1024 * 1024
+
+    @property
+    def max_file_size_bytes(self) -> int:
+        return self.max_file_size_mb * 1024 * 1024
 
 
 class CorsSettings(BaseSettings):

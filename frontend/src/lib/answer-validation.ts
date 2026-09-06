@@ -22,6 +22,7 @@ const CONTENT_KEY: Partial<Record<QuestionType, ContentKey>> = {
   date: 'value',
   rating: 'value',
   image: 'images',
+  file: 'files',
 }
 
 // 主键取不到时的回退键, 对齐后端 _CONTENT_FALLBACK: 存量库里 text 题写成 {"value": "..."}
@@ -31,12 +32,35 @@ const CONTENT_FALLBACK: Record<ContentKey, ContentKey[]> = {
   text: ['text', 'value'],
   values: ['values', 'value'],
   images: ['images', 'value'],
+  // 文件题是平台化之后才加的, 库里不存在扁平写法的历史数据, 不给回退键
+  files: ['files'],
 }
 
-const LIST_CONTENT_KEYS: ContentKey[] = ['values', 'images']
+const LIST_CONTENT_KEYS: ContentKey[] = ['values', 'images', 'files']
+
+// 与后端 _UPLOAD_URL_PATTERN 同源: 只认本站 /uploads/ 下的单层文件名
+const UPLOAD_URL_PATTERN = /^\/uploads\/[A-Za-z0-9._-]{1,128}$/
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+/** 题目配置的扩展名白名单归一化为小写带点; 没配返回空数组即不限制。 */
+function normalizedExtensions(raw?: string[]): string[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => {
+      const ext = item.trim().toLowerCase()
+      return ext.startsWith('.') ? ext : `.${ext}`
+    })
+}
+
+/** 取地址末段的扩展名 (小写带点); 无扩展名返回空串。 */
+function urlExtension(url: string): string {
+  const tail = url.split('/').pop() ?? ''
+  const dot = tail.lastIndexOf('.')
+  return dot > 0 ? tail.slice(dot).toLowerCase() : ''
+}
 
 /** 按答案主键取出原始值 (不做任何归一化), 取不到返回 null。 */
 function rawValue(contentKey: ContentKey, content?: AnswerContent | null): unknown {
@@ -225,6 +249,25 @@ export function validateAnswer(question: Question, content?: AnswerContent | nul
       if (!Array.isArray(raw)) return '图片答案格式不正确'
       const maxImages = asInt(rules.max_images) || 5
       if (raw.length > maxImages) return `最多上传 ${maxImages} 张图片`
+      return null
+    }
+
+    case 'file': {
+      if (!Array.isArray(raw)) return '文件答案格式不正确'
+      const maxFiles = asInt(rules.max_files) || 3
+      if (raw.length > maxFiles) return `最多上传 ${maxFiles} 个文件`
+      const allowed = normalizedExtensions(rules.allowed_extensions)
+      for (const entry of raw) {
+        if (!entry || typeof entry !== 'object') return '文件答案格式不正确, 请重新上传'
+        const url = (entry as { url?: unknown }).url
+        if (typeof url !== 'string' || url.includes('..') || !UPLOAD_URL_PATTERN.test(url)) {
+          return '文件地址不合法, 请重新上传'
+        }
+        // 认落盘地址的后缀而不是玩家自报的文件名, 与后端同源
+        if (allowed.length > 0 && !allowed.includes(urlExtension(url))) {
+          return `文件类型不符合要求, 仅接受 ${[...allowed].sort().join(' / ')}`
+        }
+      }
       return null
     }
   }

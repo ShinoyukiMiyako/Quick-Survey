@@ -57,31 +57,79 @@ class FileService:
                 detail=f"文件大小超过限制: {settings.upload.max_size_mb}MB"
             )
         
-        # 生成文件名和路径
-        stored_name = cls.generate_filename(file.filename or "upload.jpg")
+        return await cls._persist(db, file, content, "upload.jpg", submission_id)
+
+    @classmethod
+    async def save_attachment(
+        cls,
+        db: AsyncSession,
+        file: UploadFile,
+        submission_id: Optional[int] = None,
+    ) -> UploadedFile:
+        """保存文件题附件。
+
+        与图片走两套把关: 附件按扩展名白名单判定 (浏览器给 .ysm/.zip 一律报
+        application/octet-stream, MIME 白名单形同虚设), 体积走更宽的 max_file_size_mb。
+        """
+        settings = get_settings()
+
+        ext = Path(file.filename or "").suffix.lower()
+        allowed = [e.lower() for e in settings.upload.allowed_file_extensions]
+        if not ext or ext not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"不支持的文件格式, 仅接受 {' / '.join(allowed)}",
+            )
+
+        content = await file.read()
+        file_size = len(content)
+
+        if file_size > settings.upload.max_file_size_bytes:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"文件大小超过限制: {settings.upload.max_file_size_mb}MB",
+            )
+        if file_size == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="上传的文件是空的",
+            )
+
+        return await cls._persist(db, file, content, "upload.bin", submission_id)
+
+    @classmethod
+    async def _persist(
+        cls,
+        db: AsyncSession,
+        file: UploadFile,
+        content: bytes,
+        fallback_name: str,
+        submission_id: Optional[int],
+    ) -> UploadedFile:
+        """落盘 + 建记录。图片与附件的差异只在前面的准入校验, 存储这一段必须共用。"""
+        stored_name = cls.generate_filename(file.filename or fallback_name)
         upload_dir = cls.get_upload_dir()
         file_path = upload_dir / stored_name
-        
-        # 保存文件
+
         async with aiofiles.open(file_path, "wb") as f:
             await f.write(content)
-        
-        # 创建数据库记录
+
         uploaded_file = UploadedFile(
-            filename=file.filename or "upload",
+            filename=file.filename or fallback_name,
             stored_name=stored_name,
             file_path=str(file_path),
-            file_size=file_size,
+            file_size=len(content),
             mime_type=file.content_type or "application/octet-stream",
             submission_id=submission_id,
         )
-        
+
         db.add(uploaded_file)
         await db.commit()
         await db.refresh(uploaded_file)
-        
+
         return uploaded_file
-    
+
+
     @staticmethod
     def get_file_url(stored_name: str) -> str:
         """获取文件访问 URL"""
